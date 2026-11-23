@@ -17,3 +17,6 @@ time	who	decision	why	evidence
 2026-11-23T14:05Z	chief	Attack-mode reports show one evidence row per finding	All rows are fake by construction; demonstrated evidence is the point of the tool	brief.md Assumptions
 2026-11-23T14:05Z	chief	Kept slug anon-probe despite the mode change	Renaming means deleting a pushed branch; the brief says it is attack mode	brief.md header
 2026-11-23T14:10Z	owner	brief-approved 0186693721f7e18bed2189e0d892dfb2df378af5	Owner said the brief is right; evidence rows in reports and a self-written lab confirmed	chat 2026-11-23
+2026-11-23T14:11Z	chief	Live-target guard is structural: attacker only accepts a channel the sandbox creates, plus a per-run nonce check	A skippable URL check is one bug away from attacking a real database	docs/tasks/anon-probe/design.md §2
+2026-11-23T14:11Z	chief	Update/delete success confirmed through the superuser connection, not the REST response	RLS turns denied updates into 0-row successes	docs/tasks/anon-probe/design.md §4
+2026-11-23T14:11Z	chief	Old live-probe design moved to live-probe-notes.md	Kept as evidence for roadmap task live-probe	docs/tasks/anon-probe/live-probe-notes.md

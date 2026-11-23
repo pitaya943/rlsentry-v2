@@ -1,159 +1,157 @@
-# Design: anon-probe
+# Design: anon-probe (attack mode)
 
-Status: DRAFT. The owner moved this task to attack mode (see trail). The attack-mode
-design will replace this file. Everything below is kept as **live-probe notes**
-for roadmap task 3; its facts F1-F8 still hold.
+Status: DRAFT, in discussion with the owner. Decisions still open are marked **D-n**.
+Brief: `brief.md` (approved at 0186693). Earlier live-probe research: `live-probe-notes.md`.
 
-## 1. Facts this design rests on
-
-Proven by spike `spike/rls-ordering` (commit 57705a2), PostgreSQL 16.15, run as
-role `anon` with `SET ROLE`:
-
-| # | Fact | Evidence |
-|---|---|---|
-| F1 | On INSERT, row-level `WITH CHECK` runs before NOT NULL / constraint checks (`ExecWithCheckOptions` before `ExecConstraints`). A blank row with `pk = null` returns `42501` when the policy rejects it and `23502` when it lets it through. No row is written in either case. | spike.sql cases 1-4 |
-| F2 | The same ordering holds for UPDATE. A row anon cannot update at all gives `UPDATE 0`, not an error. | spike3.sql U1-U3 |
-| F3 | A missing GRANT gives `42501 permission denied for table`, which is distinguishable from an RLS rejection (`new row violates row-level security policy`). | spike.sql case 5 |
-| F4 | An explicit `null` overrides a column default, so `pk = null` fails even when the pk has `default gen_random_uuid()`. | spike.sql case 1 |
-| F5 | `GENERATED ALWAYS` identity pk: error `428C9` is raised before RLS, so it tells us nothing. | spike.sql case 6 |
-| F6 | **A BEFORE INSERT trigger that fills the pk makes the probe insert succeed. A row is written.** A two-row batch with a duplicate explicit pk stops a trigger that only fills nulls. A trigger that always overwrites the pk defeats both guards. | spike.sql case 7; spike2.sql A, B |
-| F7 | `INSERT ... RETURNING` also has to pass the SELECT policy, so a write-only table would look protected. The probe must not ask for the row back. | spike2.sql C, D |
-| F8 | **A value-dependent policy (`with check (status = 'pending')`) rejects the blank row but accepts the right value.** A blank-row rejection does not prove anon cannot write. | spike2.sql E |
-
-Not yet proven (PostgREST was not available in the spike session):
-
-| # | Claim the design needs | How to settle it |
-|---|---|---|
-| P1 | PostgREST maps the Postgres error to a JSON body carrying `code` (`23502`, `42501`, ...). | First ticket: run against real PostgREST |
-| P2 | `Prefer: tx=rollback` plus `Prefer: handling=strict` is refused *before* executing when the server does not allow rollback, so asking can never write. | Same |
-| P3 | What Supabase's hosted PostgREST is configured to do with `tx=rollback` by default. | Same; then a manual check against a throwaway Supabase project |
-| P4 | `GET /rest/v1/` with the anon key returns the OpenAPI description, with pk columns marked. | Same |
-
-If P2 is false, the fallback (B) is dropped and the design still holds.
-
-## 2. Frame
+## 1. Frame
 
 ```
-cli ──> scanner ──> discovery ──┐
-                    read_probe ─┼──> PostgrestClient ──HTTPS──> project /rest/v1
-                    write_probe ┘
-        scanner ──> report (text | json)        (never sees row values)
+cli ─> run(source) ─> Sandbox.build(migrations | lab)        owns: the copy's lifetime
+                       │   postgres + REST layer on 127.0.0.1:<random port>
+                       │   Supabase roles + auth stand-in, migrations applied, fake rows
+                       ▼
+                     Attacker(sandbox.anon_channel())         owns: every attacking request
+                       │   per table: read, insert, update, delete, value search
+                       ▼
+                     Findings ─> report (text | json) ─> exit code
+                     Sandbox.teardown()  (always: finally + signal handler + stale sweep)
 ```
 
-| Part | Owns | Does not |
+| Part | Owns | Never |
 |---|---|---|
-| `cli` | arguments, exit code | any HTTP |
-| `PostgrestClient` | the anon headers, rate limiting, timeouts, turning HTTP into `Response(status, code, message, headers)` | interpret verdicts |
-| `discovery` | the table list: name, columns, pk, identity | probe |
-| `read_probe` | the READ verdict | keep row values after it returns (only counts and pk values for the update probe, in memory) |
-| `write_probe` | the WRITE verdict and **all** mutating requests | no other module may send POST/PATCH/DELETE |
-| `report` | rendering | receive row values; its input type has no field for them (S-6) |
+| `cli` | arguments, exit code | builds or attacks anything itself |
+| `sandbox` | starting, seeding and destroying the copy; the superuser connection | hands its superuser connection to the attacker |
+| `attacker` | all requests made as anon; verdicts | sees a URL or credentials that the sandbox did not create |
+| `seed` | the fake rows (from column types, constraints, enums) | runs as anon |
+| `report` | rendering findings | decides verdicts |
 
-One owner for mutation is the main safety property. `PostgrestClient` exposes
-`get()` publicly and `mutate()` only to `write_probe`. A test asserts that no
-other module calls it.
+## 2. The live-target guard (S-7, critical)
 
-## 3. Interfaces
+The guard is structural, not a check that could be skipped:
+
+- `Attacker` takes an `AnonChannel`. The only constructor of `AnonChannel` is
+  `Sandbox.anon_channel()`, and only a `Sandbox` that has reached the `running` state
+  can call it. No code path turns a user-supplied URL into a channel.
+- The channel's address is `127.0.0.1:<port>` and the port belongs to a process the
+  sandbox started. Before the first attacking request, the channel reads a per-run
+  nonce table (`rlsentry_run.nonce`, created by the sandbox as superuser, readable only
+  by superuser) through the sandbox's own superuser connection, on the same port. If
+  the nonce is missing or different, the run aborts with exit 2.
+- `--target <url>` exists only so the refusal in S-7 has a clear message. It is parsed,
+  refused, and nothing is sent.
+- A test greps the source tree. Only `sandbox.py` may construct `AnonChannel`, and
+  `attacker.py` must import no HTTP client except through the channel.
+
+## 3. Sandbox (S-6, S-8)
+
+Build steps:
+1. Start PostgreSQL 16 and the REST layer (**D-1**).
+2. As superuser, create the Supabase roles (`anon`, `authenticated`, `service_role`,
+   `authenticator`). Apply Supabase's default privileges: new tables in `public` are granted
+   to `anon` and `authenticated`. That default is what makes RLS-off tables exposed.
+3. Install the auth stand-in: schema `auth`, table `auth.users (id uuid pk, email, ...)`,
+   and functions `auth.uid()`, `auth.role()`, `auth.jwt()` reading `request.jwt.claims`.
+   This matches how Supabase defines them. Extensions `pgcrypto` and `uuid-ossp`.
+4. Apply migrations in filename order, each in its own transaction. On error: name the
+   file, the statement and the missing object (`schema "storage" does not exist`),
+   tear down, exit 2 (S-6).
+5. Seed fake rows (`seed`): 5 per table, in foreign-key order, including
+   `auth.users`. Values come from type, CHECK, enum and FK targets. Rows the generator
+   cannot satisfy for a table are skipped and noted in the report.
+6. Write the nonce and switch to `running`.
+
+Teardown (S-8): every process/container gets the label `rlsentry.run=<id>`.
+Teardown runs in `finally`, on SIGINT/SIGTERM, and at the start of every run as a
+sweep of stale labelled resources. That last one covers `kill -9`.
+
+## 4. Attacker (S-1..S-5)
+
+Requests go through the REST layer with an anon JWT signed by the sandbox's per-run
+secret, the same path a browser holding the anon key takes.
+
+| Operation | Attack | EXPOSED when | Evidence |
+|---|---|---|---|
+| read | `GET /<t>?select=*` | ≥1 row returned | count + first row |
+| insert | `POST /<t>` with a fresh fake row | 2xx | the row created |
+| update | `PATCH /<t>?<pk>=eq.<seeded pk>` changing one non-key column | ≥1 row changed (checked afterwards as superuser) | before/after |
+| delete | `DELETE /<t>?<pk>=eq.<seeded pk>` | row gone (checked as superuser) | the deleted pk |
+
+Update and delete success is confirmed through the superuser connection, not the
+REST layer's response. RLS can make an update silently affect 0 rows, and the
+response alone cannot tell "denied" from "no match".
+
+Each operation runs against a fresh state: the sandbox restores the table after each
+destructive attempt (snapshot via `CREATE TABLE ... AS` before, swap back after), so one
+operation's success cannot hide another's.
+
+Value search (S-5): when insert was rejected by a policy (`42501` row-level security),
+try up to 50 candidate rows (brief default). Candidates combine (a) seeded values,
+(b) constants appearing in that table's policy expressions and CHECK constraints, read
+from `pg_policies` / `pg_constraint` by the sandbox, (c) enum labels, (d) `null`. On
+the first 2xx: EXPOSED, evidence = the accepted row. Otherwise: `protected (N rows tried)`.
+
+(b) uses white-box knowledge an outside attacker would not have. It is acceptable
+here because it only speeds up finding a row an attacker could also find by guessing.
+The report says which candidate source succeeded.
+
+## 5. Lab (S-9)
+
+`rlsentry/lab/*.sql`, written by us. Each table is named for what it demonstrates:
+
+| Table | Mistake | Expected |
+|---|---|---|
+| `lab_rls_off` | RLS never enabled | read, insert, update, delete EXPOSED |
+| `lab_using_true` | `for select using (true)` | read EXPOSED |
+| `lab_insert_only` | `for insert with check (true)` | insert EXPOSED only |
+| `lab_update_open` | `for update using (true)` | update EXPOSED (+ read if a select policy exists) |
+| `lab_delete_open` | `for delete using (true)` | delete EXPOSED |
+| `lab_value_policy` | `with check (status = 'pending')` | insert EXPOSED via value search |
+| `lab_owner_only` | correct `auth.uid() = user_id` policies | all protected |
+| `lab_no_policy` | RLS on, no policies | all protected |
+
+The lab's expected verdicts live next to it as `expected.json`. The integration
+test asserts that the report matches it exactly. That test is S-9's proof and the
+regression suite for every verdict.
+
+## 6. Interfaces
 
 ```python
-class Verdict(Enum):  EXPOSED, PROTECTED, UNKNOWN
+class Op(Enum): READ, INSERT, UPDATE, DELETE
+class Outcome(Enum): EXPOSED, PROTECTED
 
 @dataclass(frozen=True)
-class TableInfo:  name: str; columns: list[str]; pk: list[str]; pk_identity_always: bool
-
+class OpResult: op: Op; outcome: Outcome; basis: str; evidence: dict | None; tries: int = 1
 @dataclass(frozen=True)
-class ReadResult: verdict: Verdict; visible_rows: int | None; capped: bool; basis: str
+class TableFinding: schema: str; table: str; results: dict[Op, OpResult]; notes: list[str]
 @dataclass(frozen=True)
-class WriteResult: verdict: Verdict; basis: str; residue: str | None   # see 5.4
+class RunReport: source: str; findings: list[TableFinding]; started_at: str; rlsentry_version: str
 
-@dataclass(frozen=True)
-class TableReport: table: TableInfo; read: ReadResult; write: WriteResult
-
-def scan(url: str, anon_key: str, tables: list[str] | None) -> ScanReport
+def run(source: MigrationsDir | Lab) -> RunReport     # raises BuildError -> exit 2
 ```
 
-`basis` is a short, fixed phrase saying what the verdict rests on, e.g.
-`"policy rejected a blank row"`. Exit codes: `0` clean, `1` something EXPOSED,
-`2` could not scan (S-9). UNKNOWN alone exits `0` but is listed. **OPEN** (Q3).
-
-## 4. Read probe (S-1, S-2, S-3, S-6, S-7)
-
-`GET /rest/v1/<t>?select=<pk>&limit=1` with `Prefer: count=exact` and `Range: 0-999`
-(capped). It selects only the pk, so no row content crosses the wire beyond the key.
-
-| Response | Verdict | basis |
-|---|---|---|
-| 200, count > 0 | EXPOSED | `N rows visible` (`1000+` when capped) |
-| 200, count = 0 | PROTECTED | `no rows visible` (**an empty table that anyone can read looks the same**, see Q2) |
-| 401 / 42501 | PROTECTED | `no read permission` |
-| other | UNKNOWN | the error code |
-
-## 5. Write probe (S-4, S-5)
-
-### 5.1 Insert, by inference (method A)
-Precondition: the table has a pk that is not `GENERATED ALWAYS` (else UNKNOWN, F5).
-
-Request: `POST /rest/v1/<t>` with `Prefer: return=minimal` (F7). The body is a two-row
-batch with the same random pk in both rows, every column omitted except the pk set
-to `null`... (**OPEN detail**: the duplicate guard (F6) needs an explicit pk, while the
-null guard needs `null`. The builder sends `[{pk: null}, {pk: X}, {pk: X}]`. A null
-from the first row fails F1. If a trigger fills it, the duplicate X fails. The whole
-statement is atomic (spike.sql case 9).)
-
-| Postgres code | Verdict | basis |
-|---|---|---|
-| 23502 / 23505 | EXPOSED | `row passed the policy, stopped by a constraint` |
-| 42501 permission denied | PROTECTED | `no insert permission` |
-| 42501 row-level security | PROTECTED* | `policy rejected a blank row` (see Q1, F8) |
-| 2xx | EXPOSED + residue | see 5.4 |
-| other | UNKNOWN | the code |
-
-### 5.2 Value-shaped retry (proposal for Q1)
-Only when the read probe is EXPOSED and the blank row was RLS-rejected: fetch one
-visible row (all columns, kept in memory only), set its pk to null, and send that
-as the first row of the same guarded batch. This passes a value-based policy
-that real rows pass. No value is logged or reported.
-
-### 5.3 Rollback fallback (method B)
-Used only when P2 is proven and the project is shown to honour it: the same
-guarded batch with `Prefer: tx=rollback, handling=strict`. It covers tables 5.1 cannot
-(identity pk, no pk). Otherwise those tables are UNKNOWN.
-
-### 5.4 When a probe row gets through (F6)
-A 2xx on a guarded insert means a trigger defeated both guards. The verdict is
-EXPOSED, and the report says in plain words that a probe row may now exist,
-naming the table and the pk the request carried so the owner can delete it.
-This contradicts the brief's S-4 promise as written; see Q4.
-
-### 5.5 Update
-Only when the read probe returned at least one pk: `PATCH /rest/v1/<t>?<pk>=eq.<v>`
-with body `{pk: null}` and `return=minimal`. `23502` means EXPOSED, `42501` means
-PROTECTED, and 0 rows affected means PROTECTED (`policy hides the row from update`)
-(F2). Delete is not probed: no constraint makes it fail safely. The report says
-`delete: not tested`.
-
-WRITE verdict = the worse of insert and update (EXPOSED > UNKNOWN > PROTECTED).
-
-## 6. Discovery and errors (S-8, S-9)
-`GET /rest/v1/` (OpenAPI, P4) gives tables, columns and pk. When it fails or is empty,
-the user names tables with `--table` and pk detection falls back to a column called
-`id`. 401 / 403 / DNS / TLS failure on the first request gives exit 2 with the reason.
+Exit codes: 0 nothing exposed, 1 something exposed, 2 could not build or attack (S-10).
+JSON = `RunReport` as is; its schema is checked in a test (S-10).
 
 ## 7. Proof per scenario
 
-| Scenario | Proven by |
+| Scenario | Proof |
 |---|---|
-| S-1..S-5, S-7 | Integration tests against real Postgres + PostgREST with the fixture tables from the spike (including the trigger and value-policy tables), asserting verdicts and **row counts before = after** |
-| S-6 | A test that seeds a unique marker string in every fixture row and asserts it appears in neither the text nor the JSON output |
-| S-8 | JSON schema test |
-| S-9 | Test with a wrong key, asserting exit 2 |
-| P3 | Manual run against a throwaway hosted Supabase project, recorded |
+| S-1..S-5, S-9 | Integration: run on the lab, compare to `expected.json` (fails today: there is no code) |
+| S-6 | Integration: a migrations folder using `auth.uid()` and `references auth.users` builds; one using `storage.buckets` exits 2 naming `storage` |
+| S-7 | Unit: `--target https://x.supabase.co` exits 2 with no socket opened (a socket-level guard in the test) + the source-tree test from §2 |
+| S-8 | Integration: send SIGINT mid-run, then assert no labelled process/container is left; run once with an injected build failure, same assertion |
+| S-10 | JSON schema test; exit-code tests for each of 0/1/2 |
 
-Test infra: real Postgres 16 and PostgREST v12 in CI (GitHub Actions service
-containers); `test_command: pytest` set in this task's PR.
+## 8. Decisions for the owner
 
-## 8. Open questions for the owner
-- **Q1** Blank-row RLS rejection (F8): `protected` with its basis shown, plus the 5.2 retry when readable?
-- **Q2** Empty readable table: `protected (no rows visible)`?
-- **Q3** Should UNKNOWN fail the run?
-- **Q4** S-4 cannot be guaranteed against a pk-overwriting trigger (F6): accept "guarded + residue reported", or make the write probe opt-in?
+- **D-1 How the copy runs.**
+  (a) Docker images `postgres:16` and `postgrest/postgrest`, which are small and close to Supabase's REST layer;
+  (b) Supabase CLI `supabase start`, the full stack, most faithful, but heavy and slow;
+  (c) local binaries (`postgres`, `postgrest` on PATH).
+  Recommended: (a) as the default with (c) as a second backend. Docker Hub rate-limited
+  this session (429), and the unattended run may hit the same, so the tests must be
+  able to use (c).
+- **D-2 Talking through the REST layer vs SQL `SET ROLE anon`.** Recommended: the REST
+  layer, which is the attacker's real path (exposed schemas, grants, JWT). The SQL
+  route would hide mistakes in what the REST layer exposes.
+- **D-3 White-box value candidates (§4 b).** Recommended: yes, with the source shown.
