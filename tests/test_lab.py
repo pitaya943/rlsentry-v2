@@ -45,10 +45,30 @@ def test_json_report_matches_schema(lab_run):
     jsonschema.validate(json.loads(lab_run[1]), schema)
 
 
-def test_text_report_names_the_verdict(state_dir):
+LAB_TEXT_REPORT = """\
+public.lab_no_policy
+  READ: protected - anon read 0 rows
+  note: seeded 5 rows
+public.lab_rls_off
+  READ: EXPOSED - anon read 5 row(s)
+    evidence: {"rows_read": 5, "row": {"id": 1, "email": "email-1", "note": "note-1"}}
+  note: seeded 5 rows
+public.lab_using_true
+  READ: EXPOSED - anon read 5 row(s)
+    evidence: {"rows_read": 5, "row": {"id": 1, "email": "email-1", "note": "note-1"}}
+  note: seeded 5 rows
+
+2 exposed operation(s) in 3 table(s).
+"""
+
+
+def test_text_report_shows_verdicts_evidence_notes_and_summary(state_dir):
     code, out, _ = run_rlsentry("attack", "--lab", state_dir=state_dir)
     assert code == 1
-    assert "public.lab_rls_off\n  READ: EXPOSED - anon read 5 row(s)" in out
+    header, blank, *body = out.split("\n")
+    assert header.startswith("rlsentry ") and " attack on lab (" in header
+    assert blank == ""
+    assert "\n".join(body) == LAB_TEXT_REPORT
 
 
 def test_clean_migrations_exit_zero(state_dir):
