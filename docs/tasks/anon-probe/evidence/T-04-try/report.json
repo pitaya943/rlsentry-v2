@@ -1,6 +1,6 @@
 {
   "source": "lab",
-  "started_at": "2026-11-23T21:23:43+00:00",
+  "started_at": "2026-11-23T23:02:50+00:00",
   "rlsentry_version": "0.1.0",
   "findings": [
     {
@@ -337,7 +337,7 @@
           "basis": "anon inserted a row (HTTP 201), row 2 of the value search, with status = \"pending\" from the insert policy's constants",
           "evidence": {
             "row": {
-              "id": 7,
+              "id": 8,
               "email": "email-6",
               "status": "pending"
             },
