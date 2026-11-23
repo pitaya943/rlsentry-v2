@@ -41,22 +41,35 @@ create role service_role nologin noinherit bypassrls;
 create role authenticator login noinherit;
 grant anon, authenticated, service_role to authenticator;
 grant usage on schema public to anon, authenticated, service_role;
-alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
-alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
-alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+
+-- Migrations, seeding and restoring run as `postgres`, shaped like hosted Supabase's: it owns
+-- what migrations create and bypasses RLS, but it is not a superuser, so nothing a migration
+-- says can reach the host (COPY ... PROGRAM or a server file, untrusted extensions or
+-- languages, server-side large objects). The superuser (supabase_admin, as on Supabase) only
+-- sets the copy up, writes the nonce and checks what attacks did.
+create role postgres login createrole createdb bypassrls;
+grant anon, authenticated, service_role to postgres;
+grant create, temporary on database postgres to postgres;
+grant all on schema public to postgres;
+grant set on parameter session_replication_role to postgres;  -- restore() turns FK checks off
+alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public grant all on functions to anon, authenticated, service_role;
 create schema rlsentry_run;
 create table rlsentry_run.nonce (value text not null);
+create schema rlsentry_seeded authorization postgres;  -- restore()'s copies of the seeded tables
 
--- Extensions where Supabase puts them (on the search path: SEARCH_PATH below).
+-- Extensions where Supabase puts them (on the search path: SCHEMAS_ON_PATH below).
 create schema extensions;
 create extension pgcrypto with schema extensions;
 create extension "uuid-ossp" with schema extensions;
-grant usage on schema extensions to anon, authenticated, service_role;
+create extension pg_stat_statements with schema extensions;
+grant usage on schema extensions to postgres, anon, authenticated, service_role;
 
 -- The auth stand-in: the parts of Supabase's auth schema that migrations and policies use.
 -- The functions read the claims PostgREST sets for each request, as Supabase's do.
 create schema auth;
-grant usage on schema auth to anon, authenticated, service_role;
+grant usage on schema auth to postgres, anon, authenticated, service_role;
 -- auth.users has the columns of Supabase's own that triggers on it read.
 create table auth.users (
   instance_id uuid,
@@ -83,6 +96,7 @@ create table auth.users (
   deleted_at timestamptz,
   is_anonymous boolean not null default false
 );
+grant all on auth.users to postgres;
 create function auth.uid() returns uuid language sql stable as $$
   select (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')::uuid
 $$;
@@ -94,9 +108,11 @@ create function auth.jwt() returns jsonb language sql stable as $$
 $$;
 """
 
-# Supabase's search path, for every connection: the server's default covers this process's
-# connections and the migrations'; PostgREST sets its own per request (db-extra-search-path).
-SEARCH_PATH = '"$user", public, extensions'
+# Supabase's search path: the server's default (migrations, seeding) and PostgREST's per
+# request (db-extra-search-path). The superuser's own connection searches pg_catalog only, so
+# a migration's function named like a built-in is never called by it.
+SCHEMAS_ON_PATH = "public, extensions"
+SUPERUSER = "supabase_admin"
 
 
 class BuildError(Exception):
@@ -143,7 +159,9 @@ class Sandbox:
         self._marker = state_dir() / f"{self._run_id}.json"
         self._run_dir: Path | None = None
         self._procs: list[tuple[subprocess.Popen, signal.Signals]] = []
-        self._conn: psycopg.Connection | None = None
+        self._conn: psycopg.Connection | None = None  # superuser: setup, nonce, checks
+        self._app: psycopg.Connection | None = None   # postgres: anything running migration code
+        self._columns: dict[str, list[str]] = {}
         self._old_handlers: dict = {}
         self._running = False
         self._rest_port = 0
@@ -168,12 +186,13 @@ class Sandbox:
     def teardown(self) -> None:
         with _signals_ignored():
             self._running = False
-            if self._conn is not None:
-                try:
-                    self._conn.close()
-                except psycopg.Error:
-                    pass
-                self._conn = None
+            for conn in (self._app, self._conn):
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except psycopg.Error:
+                        pass
+            self._app = self._conn = None
             for proc, sig in self._procs:  # postgres first: ends in-flight queries, so PostgREST can stop
                 _stop_child(proc, sig)
             self._procs.clear()
@@ -190,19 +209,19 @@ class Sandbox:
     def inspector(self) -> "Inspector":
         if not self._running:
             raise RuntimeError("inspector() needs a running sandbox")
-        return Inspector(self._conn)
+        return Inspector(self._conn, self._app)
 
     def restore(self) -> None:
         """Put every table back to its seeded state, so one attack cannot hide another (§4)."""
-        with self._conn.transaction():
+        with self._app.transaction():
             # replica: no FK checks or triggers while the tables are briefly empty
-            self._conn.execute("set local session_replication_role = replica")
+            self._app.execute("set local session_replication_role = replica")
             for i, table in enumerate(self.tables):
-                cols = sql.SQL(", ").join(map(sql.Identifier, _stored_columns(self._conn, table)))
+                cols = sql.SQL(", ").join(map(sql.Identifier, self._columns[table]))
                 target = sql.Identifier("public", table)
-                self._conn.execute(sql.SQL("delete from {}").format(target))
-                self._conn.execute(sql.SQL("insert into {} ({}) overriding system value select {} from {}")
-                                   .format(target, cols, cols, sql.Identifier("rlsentry_run", f"seeded_{i}")))
+                self._app.execute(sql.SQL("delete from {}").format(target))
+                self._app.execute(sql.SQL("insert into {} ({}) overriding system value select {} from {}")
+                                  .format(target, cols, cols, sql.Identifier("rlsentry_seeded", f"seeded_{i}")))
 
     # build (design §3)
 
@@ -218,7 +237,7 @@ class Sandbox:
 
         data = self._run_dir / "data"
         init = subprocess.run(
-            [bins["initdb"], "-D", str(data), "-U", "postgres", "--auth=trust", "-E", "UTF8",
+            [bins["initdb"], "-D", str(data), "-U", SUPERUSER, "--auth=trust", "-E", "UTF8",
              "--no-sync", "--no-instructions"],
             capture_output=True, text=True, **self._as_user(),
         )
@@ -229,13 +248,15 @@ class Sandbox:
         pg = self._spawn(
             [bins["postgres"], "-D", str(data), "-p", str(pg_port),
              "-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories=",
-             "-c", f"search_path={SEARCH_PATH}",
+             "-c", f'search_path="$user", {SCHEMAS_ON_PATH}',
              "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"],
             "postgres.log", signal.SIGINT,  # SIGINT = fast shutdown
         )
         self._conn = _connect(pg_port, pg, self._run_dir / "postgres.log")
         self._conn.execute(_SETUP_SQL)
         self._apply_migrations(pg_port)
+        self._app = psycopg.connect(host="127.0.0.1", port=pg_port, user="postgres",
+                                    dbname="postgres", autocommit=True)
         self._seed()
         self._snapshot()
         self._conn.execute("insert into rlsentry_run.nonce values (%s)", (self._nonce,))
@@ -245,7 +266,7 @@ class Sandbox:
         conf.write_text(
             f'db-uri = "postgres://authenticator@127.0.0.1:{pg_port}/postgres"\n'
             'db-schemas = "public"\n'
-            'db-extra-search-path = "public, extensions"\n'
+            f'db-extra-search-path = "{SCHEMAS_ON_PATH}"\n'
             'db-anon-role = "anon"\n'
             f'jwt-secret = "{self._jwt_secret}"\n'
             'server-host = "127.0.0.1"\n'
@@ -288,7 +309,7 @@ class Sandbox:
             "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace"
             " where n.nspname = 'public' and c.relkind in ('r', 'p') order by c.relname"
         )]
-        seeded = seed(self._conn, [("public", t) for t in self.tables])  # + auth.users etc. they reference
+        seeded = seed(self._app, [("public", t) for t in self.tables])  # + auth.users etc. they reference
         empty = [f"{s}.{t}: {r.reason}" for (s, t), r in seeded.items() if r.rows == 0]
         if empty:
             # An empty table says nothing about its policies: never attack a partial copy.
@@ -297,8 +318,9 @@ class Sandbox:
 
     def _snapshot(self) -> None:
         for i, table in enumerate(self.tables):
-            self._conn.execute(sql.SQL("create table {} as select * from {}").format(
-                sql.Identifier("rlsentry_run", f"seeded_{i}"), sql.Identifier("public", table)))
+            self._columns[table] = _stored_columns(self._conn, table)
+            self._app.execute(sql.SQL("create table {} as select * from {}").format(
+                sql.Identifier("rlsentry_seeded", f"seeded_{i}"), sql.Identifier("public", table)))
 
     def _verify(self) -> None:
         """Called by the channel before its first request: is this still our copy?"""
@@ -360,8 +382,9 @@ class Inspector:
 
     It holds the sandbox's superuser connection and never hands it out."""
 
-    def __init__(self, conn: psycopg.Connection):
+    def __init__(self, conn: psycopg.Connection, app: psycopg.Connection):
         self._conn = conn
+        self._app = app  # postgres: for anything that runs the table's own code
 
     def primary_key(self, table: str) -> list[str]:
         return [r[0] for r in self._conn.execute(
@@ -376,7 +399,7 @@ class Inspector:
 
     def fake_row(self, table: str) -> dict[str, str] | None:
         """A fresh fake row, different from every seeded one; None if one cannot be made."""
-        return fake_row(self._conn, "public", table)
+        return fake_row(self._app, "public", table)
 
 
 # helpers
@@ -497,8 +520,9 @@ def _connect(port: int, proc: subprocess.Popen, log: Path) -> psycopg.Connection
         if proc.poll() is not None:
             raise BuildError(f"postgres exited: {_log_tail(log)}")
         try:
-            return psycopg.connect(host="127.0.0.1", port=port, user="postgres", dbname="postgres",
-                                   autocommit=True, connect_timeout=2)
+            return psycopg.connect(host="127.0.0.1", port=port, user=SUPERUSER, dbname="postgres",
+                                   autocommit=True, connect_timeout=2,
+                                   options="-c search_path=pg_catalog")
         except psycopg.OperationalError:
             if time.monotonic() > deadline:
                 raise BuildError(f"postgres did not accept connections: {_log_tail(log)}")
