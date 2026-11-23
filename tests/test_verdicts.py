@@ -44,6 +44,11 @@ def test_value_search_finds_the_row_a_policy_accepts_and_names_its_source(value_
     assert "value search" in result["basis"]
 
 
+def test_value_search_tries_only_the_insert_policies_constants(value_search):
+    # vs_null: the fresh row, the 5 seeded notes, then null; not the select policy's 'visible'
+    assert value_search["vs_null"]["results"]["INSERT"]["tries"] == 7
+
+
 def test_value_search_is_bounded_and_says_how_many_rows_it_tried(value_search):
     result = value_search["vs_owner"]["results"]["INSERT"]
     assert result["outcome"] == "protected"
@@ -108,6 +113,16 @@ create policy p on u for update to anon using (true);
     update = _findings(out)["u"]["results"]["UPDATE"]
     assert update["outcome"] == "EXPOSED", update["basis"]
     assert update["evidence"]["after"]["note"] == "note-6"
+
+
+def test_update_sets_a_key_column_last(state_dir, tmp_path):
+    # id has a default, so an update could set it; a changed key would hide which row changed.
+    code, out, err = _run(tmp_path, state_dir, """
+create table k (id uuid primary key default gen_random_uuid(), note text);
+""")
+    assert code == 1, err
+    evidence = _findings(out)["k"]["results"]["UPDATE"]["evidence"]
+    assert evidence["after"] == dict(evidence["before"], note="note-6")
 
 
 def test_update_refused_only_by_a_unique_key_is_not_protected(state_dir, tmp_path):

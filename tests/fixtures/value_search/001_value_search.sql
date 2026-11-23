@@ -42,6 +42,8 @@ create table vs_null (
 );
 alter table vs_null enable row level security;
 create policy p on vs_null for insert to anon with check (note is null);
+-- a constant in another command's policy is no candidate for an insert
+create policy r on vs_null for select to anon using (note = 'visible');
 
 -- nothing anon can send passes, and there are more candidates than the bound
 create type public.many as enum ('m01', 'm02', 'm03', 'm04', 'm05', 'm06', 'm07', 'm08', 'm09',

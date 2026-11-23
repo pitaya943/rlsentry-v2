@@ -36,9 +36,11 @@ MUTANTS = [
      "                if body and not self._db.would_change(table, *next(iter(body.items())), target):",
      "                if False:"),
     # F4: unique columns last
-    ("UPDATE: column order ignores unique", AT,
-     "order = sorted(values, key=lambda c: (c in key, c in unique))",
-     "order = sorted(values, key=lambda c: (c in key,))"),
+    ("UPDATE: no other column after a 409", AT,
+     "                unclean.append(answers[-1])\n", "                unclean.append(answers[-1])\n                break\n"),
+    ("UPDATE: key columns not last", AT,
+     "        bodies = [{c: values[c]} for c in sorted(values, key=lambda c: c in key)]",
+     "        bodies = [{c: values[c]} for c in sorted(values, key=lambda c: c not in key)]"),
     # FK-409 delete
     ("DELETE: no retry without referencing rows", AT,
      "                        and self._db.detach_references(table)):",

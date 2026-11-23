@@ -405,14 +405,6 @@ class Inspector:
         """A fresh value for every column an update can set."""
         return update_values(self._app, "public", table)
 
-    def unique_columns(self, table: str) -> set[str]:
-        """Columns in any unique index (the primary key's included)."""
-        return {r[0] for r in self._conn.execute(
-            "select a.attname from pg_index i join pg_attribute a"
-            " on a.attrelid = i.indrelid and a.attnum = any(i.indkey)"
-            " where i.indrelid = format('public.%%I', %s::text)::regclass and i.indisunique",
-            (table,))}
-
     def would_change(self, table: str, column: str, value, row: dict | None) -> bool:
         """Would setting `column` to `value` change `row` (by primary key), or any row if None?
         An update that writes the value already there changes nothing a check could see."""

@@ -77,11 +77,10 @@ class Attacker:
     def update(self, table: str) -> OpResult:
         """EXPOSED only if the superuser sees a row changed: RLS can make a 2xx change nothing.
         Each column is set to a value the target row does not hold, so a 2xx that changed
-        nothing is RLS's answer; non-unique, non-key columns first (a unique one meets a 409)."""
+        nothing is RLS's answer; one column at a time, key columns last (a changed key would
+        hide which row changed), the next one after a refusal such as a unique key's 409."""
         values, key = self._db.update_values(table), self._db.primary_key(table)
-        unique = self._db.unique_columns(table)
-        order = sorted(values, key=lambda c: (c in key, c in unique))
-        bodies = [{c: values[c]} for c in order]
+        bodies = [{c: values[c]} for c in sorted(values, key=lambda c: c in key)]
         if not bodies:
             raise AttackError(f"{table}: UPDATE not attempted: no column anon could set")
         return self._destroy(Op.UPDATE, "PATCH", table, key, bodies)
