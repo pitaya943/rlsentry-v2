@@ -129,6 +129,9 @@ def _seed_table(conn, schema: str, table: str) -> Seeded:
             else:
                 inserted += 1
     rows = conn.execute(sql.SQL("select count(*) from {}").format(plan.rel)).fetchone()[0]
+    if inserted and not rows:
+        reason = (f"{inserted} insert(s) succeeded but no row was kept "
+                  "(a trigger or rule discarded them)")
     note = (f"seeded {inserted} rows" if inserted == ROWS_PER_TABLE else
             f"seeded {inserted} of {ROWS_PER_TABLE} rows; skipped: {reason}")
     return Seeded(rows, note, reason)

@@ -152,3 +152,82 @@ alter table child enable row level security;
     assert delete["outcome"] == "EXPOSED", delete["basis"]
     assert delete["evidence"]["rows_deleted"] == 5
     assert "referencing it were removed first" in delete["basis"]
+
+
+@pytest.fixture(scope="module")
+def value_types(tmp_path_factory):
+    code, out, err = run_rlsentry("attack", "--migrations", str(FIXTURES / "value_types"),
+                                  "--json", state_dir=tmp_path_factory.mktemp("state"))
+    assert code == 0, err  # anon can satisfy none of these insert policies
+    return _findings(out)
+
+
+@pytest.mark.parametrize("table, tried", [
+    ("posts", None),     # interval '1 day' is no timestamptz (seeded timestamps vary)
+    ("bookings", 16),    # interval '30 days' is no date: fresh row + 3 columns x 5 seeded values
+    ("t_int", 11),       # 0.5, 1.5, -0.5 are no integers: fresh row + 5 owners + 5 values of n
+    ("t_small", 13),     # 32767 and 32766 are smallints, 32768 is not
+    ("t_role", 11),      # 'role' and 'admin' are about the JWT, not the role column
+    ("t_len", 7),        # 'abcd' is sent, refused as too long, and counts as a row tried
+    ("t_auth", 11),      # the authenticated policy's 'staff' is no candidate for anon
+])
+def test_value_search_sends_only_values_the_column_can_hold(value_types, table, tried):
+    result = value_types[table]["results"]["INSERT"]
+    assert result["outcome"] == "protected", result["basis"]
+    assert "42501" in result["basis"]
+    if tried is not None:
+        assert result["tries"] == tried
+
+
+def test_insert_that_wrote_no_row_is_not_exposed(state_dir, tmp_path):
+    # PR #6 verdict, Finding 1: the trigger drops anon's row and PostgREST still answers 201.
+    code, out, err = _run(tmp_path, state_dir, """
+create table inbox (id bigint generated always as identity primary key, note text);
+create function public.drop_anon() returns trigger language plpgsql as $$
+begin
+  if current_user = 'anon' then return null; end if;
+  return new;
+end $$;
+create trigger drop_anon before insert on inbox for each row execute function public.drop_anon();
+alter table inbox enable row level security;
+create policy p on inbox for insert to anon with check (true);
+""")
+    assert code == 2, out
+    assert out == ""
+    assert "inbox: INSERT got no answer from row-level security" in err
+    assert "no row was written" in err
+
+
+def test_seeding_that_kept_no_row_says_why(state_dir, tmp_path):
+    # PR #6 verdict, Finding 2: every insert "succeeds" and the table stays empty.
+    code, out, err = _run(tmp_path, state_dir, """
+create table inbox (id bigint generated always as identity primary key, note text);
+create function public.drop_all() returns trigger language plpgsql as $$
+begin
+  return null;
+end $$;
+create trigger drop_all before insert on inbox for each row execute function public.drop_all();
+""")
+    assert code == 2, out
+    assert "could not seed public.inbox: " in err
+    assert "no row was kept" in err
+
+
+def test_delete_clears_a_tables_references_to_itself_before_trying_again(state_dir, tmp_path):
+    # The rows reference each other (the migration's own two, and the fake rows point at
+    # them); deleting row 1 by its key hits the self-reference, which is cleared, then retried.
+    code, out, err = _run(tmp_path, state_dir, """
+create table comments (id bigint generated always as identity primary key,
+                       parent_id bigint references comments, note text);
+insert into comments (parent_id, note) values (null, 'root');
+insert into comments (parent_id, note) values (1, 'reply');
+alter table comments enable row level security;
+create policy r on comments for select to anon using (true);
+create policy d on comments for delete to anon using (true);
+""")
+    assert code == 1, err
+    delete = _findings(out)["comments"]["results"]["DELETE"]
+    assert delete["outcome"] == "EXPOSED", delete["basis"]
+    assert "by primary key" in delete["basis"]
+    assert "referencing it were removed first" in delete["basis"]
+    assert delete["evidence"] == {"rows_deleted": 1, "deleted": {"id": 1}}

@@ -434,11 +434,13 @@ class Inspector:
                 " and tablename = %s and cmd in ('INSERT', 'ALL')"
                 " and roles && array['anon', 'public']::name[] and permissive = 'PERMISSIVE'",
                 (table,)):
-            out += [("policy", c, v) for c, v in _constants(expr or "", columns)]
+            out += [("policy", c, v) for c, v in _constants(expr or "", columns)
+                    if self._fits(columns[c][0], v)]
         for (expr,) in self._conn.execute(
                 "select pg_get_constraintdef(oid) from pg_constraint where contype = 'c'"
                 " and conrelid = format('public.%%I', %s::text)::regclass", (table,)):
-            out += [("check", c, v) for c, v in _constants(expr, columns)]
+            out += [("check", c, v) for c, v in _constants(expr, columns)
+                    if self._fits(columns[c][0], v)]
         for name, (typ, enum, _) in columns.items():
             if enum:
                 out += [("enum", name, label) for (label,) in self._conn.execute(
@@ -453,6 +455,17 @@ class Inspector:
             out += [("seeded", name, v) for v in seen]
         out += [("null", name, None) for name, (_, _, notnull) in columns.items() if not notnull]
         return out
+
+    def _fits(self, typ: str, value: str) -> bool:
+        """Can a column of type `typ` hold `value`? ('1 day' is no date, 0.5 no integer, 32768
+        no smallint.) An explicit cast truncates an over-long varchar: PostgREST then refuses the
+        row (22001), which the attacker counts as a rejected candidate."""
+        try:
+            with self._app.transaction():
+                self._app.execute(sql.SQL("select %s::{}").format(sql.SQL(typ)), [value])
+        except psycopg.Error:
+            return False
+        return True
 
     def make_room(self, table: str, constraint: str, row: dict) -> bool:
         """Remove the rows `row` collides with on unique `constraint`, so an insert anon's
@@ -578,18 +591,20 @@ _NUMERIC_TYPES = ("smallint", "integer", "bigint", "real", "double precision", "
 
 def _constants(expr: str, columns: dict) -> list[tuple[str, object]]:
     """(column, constant) pairs from a deparsed expression: each constant goes with the
-    columns named in the same AND/OR term. Numbers n also give n+1 and n-1 (for < and >),
-    and only to numeric columns."""
+    columns named in the same AND/OR term (outside its string literals: `->> 'role'` names no
+    column). Numbers n also give n+1 and n-1 (for < and >), and only to numeric columns.
+    Whether the column can hold the constant is the caller's check."""
     out = []
     for term in re.split(r"\b(?:AND|OR)\b", expr):
         strings = [m.replace("''", "'") for m in _STRING.findall(term)]
+        code = _STRING.sub("''", term)
         numbers = []
-        for n in _NUMBER.findall(_STRING.sub("''", term)):
+        for n in _NUMBER.findall(code):
             v = float(n) if "." in n else int(n)
             numbers += [str(v), str(v + 1), str(v - 1)]
         for name, (typ, _, _) in columns.items():
             if not re.search(r'(?<![\w"])' + re.escape(name) + r'(?![\w"])|"'
-                             + re.escape(name.replace('"', '""')) + '"', term):
+                             + re.escape(name.replace('"', '""')) + '"', code):
                 continue
             out += [(name, v) for v in strings]
             if typ.split("(")[0] in _NUMERIC_TYPES:

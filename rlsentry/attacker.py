@@ -55,10 +55,13 @@ class Attacker:
             row = dict(base, **change)
             tried += 1
             resp, made_room, before = self._post(table, row)
+            created = _missing(self._db.rows(table), before)
+            if 200 <= resp.status < 300 and not created:  # e.g. a trigger returned null
+                unclean.append(f"{_answer(resp)}, but no row was written (checked as superuser)")
+                continue
             if 200 <= resp.status < 300:
-                created = _missing(self._db.rows(table), before)
                 basis = f"anon inserted a row (HTTP {resp.status})"
-                evidence = {"row": created[0] if created else row}
+                evidence = {"row": created[0]}
                 if source:
                     basis += (f", row {tried} of the value search, with "
                               + ", ".join(f"{c} = {json.dumps(v)}" for c, v in change.items())
@@ -67,9 +70,12 @@ class Attacker:
                 if made_room:
                     basis += f"; first the seeded row it collided with on {made_room} was removed"
                 return OpResult(Op.INSERT, Outcome.EXPOSED, basis, evidence, tries=tried)
-            last = _answer(resp)
+            if str(_code(resp)).startswith("22"):
+                continue  # a value the column cannot hold (too long, say): no row, no answer
             if not _refused(resp):
-                unclean.append(last)
+                unclean.append(_answer(resp))
+            else:
+                last = _answer(resp)
         if unclean:
             raise _unclean(table, Op.INSERT, unclean)
         return OpResult(Op.INSERT, Outcome.PROTECTED, last, None, tries=tried)
@@ -108,6 +114,7 @@ class Attacker:
                 if (op is Op.DELETE and _code(resp) == "23503" and not detached
                         and self._db.detach_references(table)):
                     detached = True  # the policy let the delete through; a foreign key stopped it
+                    before = self._db.rows(table)  # references cleared: compare with that
                     resp = self._send(method, table, query, body)
                 answers.append(f"{method} {how}: {_answer(resp)}")
                 after = self._db.rows(table)

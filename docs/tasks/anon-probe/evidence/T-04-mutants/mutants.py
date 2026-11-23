@@ -94,6 +94,24 @@ MUTANTS = [
     ("postgres cannot create in public", SB, "grant all on schema public to postgres;\n", ""),
     ("one search path: PostgREST's dropped", SB,
      "            f'db-extra-search-path = \"{SCHEMAS_ON_PATH}\"\\n'\n", ""),
+    # fix round 1 (PR #6 verdict D1-D3, Findings 1-2); G and H are the verifier's
+    ("G: policies for any role used", SB, " and roles && array['anon', 'public']::name[] and permissive",
+     " and permissive"),
+    ("H: detach: self-references skipped", SB, "                if itself:\n", "                if itself:\n                    continue\n"),
+    ("candidates not checked against the column's type", SB,
+     "        try:\n            with self._app.transaction():\n                self._app.execute(sql.SQL(\"select %s::{}\")",
+     "        return True\n        try:\n            with self._app.transaction():\n                self._app.execute(sql.SQL(\"select %s::{}\")"),
+    ("column names matched inside string literals", SB,
+     """                             + re.escape(name.replace('"', '""')) + '"', code):""",
+     """                             + re.escape(name.replace('"', '""')) + '"', term):"""),
+    ("a candidate the column cannot hold (22xxx) is unclean", AT,
+     '            if str(_code(resp)).startswith("22"):', '            if False:'),
+    ("2xx insert that wrote nothing reads EXPOSED", AT,
+     "            if 200 <= resp.status < 300 and not created:  # e.g. a trigger returned null",
+     "            if False:"),
+    ("seeding that kept no row gives no reason", SD, "    if inserted and not rows:\n", "    if False:\n"),
+    ("delete compares with the rows before the references were cleared", AT,
+     "                    before = self._db.rows(table)  # references cleared: compare with that\n", ""),
 ]
 
 
