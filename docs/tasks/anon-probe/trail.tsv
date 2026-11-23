@@ -22,3 +22,5 @@ time	who	decision	why	evidence
 2026-11-23T14:11Z	chief	Old live-probe design moved to live-probe-notes.md	Kept as evidence for roadmap task live-probe	docs/tasks/anon-probe/live-probe-notes.md
 2026-11-23T14:14Z	owner	D-1 docker + local backends; D-2 attack via REST layer only; D-3 white-box value candidates allowed	Owner accepted the recommendations	chat 2026-11-23; design.md §8
 2026-11-23T14:14Z	chief	Tests run on the local backend; docker only when a daemon answers	No Docker daemon in the cloud image and Docker Hub returned 429	design.md §8
+2026-11-23T14:19Z	owner	Downloaded PostgREST v12.2.3 (sha256 9f71269e...) and verified it serves local PostgreSQL 16 with JSON error codes	Owner approved the download; the local backend needs it	design.md §8
+2026-11-23T14:19Z	owner	Session moved to cloud environment rlsentry-v2; setup script added installing shilaycow v0.4.2 skills and pinned PostgREST	Owner chose that environment; unattended runs need PostgREST; not yet proven on a freshly built container	environment rlsentry-v2

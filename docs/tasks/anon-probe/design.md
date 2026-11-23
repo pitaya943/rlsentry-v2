@@ -158,5 +158,9 @@ JSON = `RunReport` as is; its schema is checked in a test (S-10).
 - **D-3 White-box value candidates allowed** (§4 b). The report names the candidate
   source that succeeded.
 
-Environment fact (2026-11-23): PostgreSQL 16 is preinstalled in the cloud image;
-PostgREST is not. The PostgREST release asset is reachable over the network.
+Environment fact (2026-11-23): PostgreSQL 16 is preinstalled in the cloud image at
+`/usr/lib/postgresql/16/bin` (it must run as a non-root user, e.g. `postgres`).
+The cloud environment `rlsentry-v2` setup script installs PostgREST 12.2.3 to
+`/usr/local/bin/postgrest`, pinned by sha256. Checked by hand: PostgREST 12.2.3 against local
+PostgreSQL 16 returns rows for an open table and JSON errors with `code`
+(`42501` for an RLS rejection, `23502` for NOT NULL).
