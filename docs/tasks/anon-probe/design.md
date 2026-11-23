@@ -142,16 +142,21 @@ JSON = `RunReport` as is; its schema is checked in a test (S-10).
 | S-8 | Integration: send SIGINT mid-run, then assert no labelled process/container is left; run once with an injected build failure, same assertion |
 | S-10 | JSON schema test; exit-code tests for each of 0/1/2 |
 
-## 8. Decisions for the owner
+## 8. Decisions (owner, 2026-11-23)
 
-- **D-1 How the copy runs.**
-  (a) Docker images `postgres:16` and `postgrest/postgrest`, which are small and close to Supabase's REST layer;
-  (b) Supabase CLI `supabase start`, the full stack, most faithful, but heavy and slow;
-  (c) local binaries (`postgres`, `postgrest` on PATH).
-  Recommended: (a) as the default with (c) as a second backend. Docker Hub rate-limited
-  this session (429), and the unattended run may hit the same, so the tests must be
-  able to use (c).
-- **D-2 Talking through the REST layer vs SQL `SET ROLE anon`.** Recommended: the REST
-  layer, which is the attacker's real path (exposed schemas, grants, JWT). The SQL
-  route would hide mistakes in what the REST layer exposes.
-- **D-3 White-box value candidates (§4 b).** Recommended: yes, with the source shown.
+- **D-1 How the copy runs: two backends behind one `Backend` interface.**
+  `docker` (default): images `postgres:16` and `postgrest/postgrest:v12.2.3`, pinned.
+  `local`: `postgres` / `initdb` / `pg_ctl` and `postgrest` found on PATH or under
+  `/usr/lib/postgresql/<v>/bin`. When run as root, the local backend runs the server
+  as an unprivileged OS user (PostgreSQL refuses root), with its data directory under
+  that user's temp directory. `--backend auto` tries docker and falls back to local.
+  The test suite runs on `local` and also runs on `docker` when a daemon answers.
+  The unattended environment has no running Docker daemon and Docker Hub rate-limits
+  anonymous pulls (429 seen).
+- **D-2 Attacks go through the REST layer** (PostgREST) with an anon JWT. Never SQL
+  `SET ROLE` for an attack. SQL is only for the sandbox's own setup and checks.
+- **D-3 White-box value candidates allowed** (§4 b). The report names the candidate
+  source that succeeded.
+
+Environment fact (2026-11-23): PostgreSQL 16 is preinstalled in the cloud image;
+PostgREST is not. The PostgREST release asset is reachable over the network.
