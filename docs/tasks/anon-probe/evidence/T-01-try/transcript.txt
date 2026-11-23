@@ -1,0 +1,41 @@
+$ rlsentry attack --lab
+rlsentry 0.1.0 attack on lab (2026-11-23T14:33:05+00:00)
+
+public.lab_no_policy
+  READ: protected - anon read 0 rows
+  note: seeded 5 rows
+public.lab_rls_off
+  READ: EXPOSED - anon read 5 row(s)
+    evidence: {"rows_read": 5, "row": {"id": 1, "email": "email-1", "note": "note-1"}}
+  note: seeded 5 rows
+public.lab_using_true
+  READ: EXPOSED - anon read 5 row(s)
+    evidence: {"rows_read": 5, "row": {"id": 1, "email": "email-1", "note": "note-1"}}
+  note: seeded 5 rows
+
+2 exposed operation(s) in 3 table(s).
+[exit 1, expected 1]
+
+[--json exit 1]
+$ rlsentry attack --migrations /tmp/tmp.43f6kuTbl1/clean
+rlsentry 0.1.0 attack on /tmp/tmp.43f6kuTbl1/clean (2026-11-23T14:33:08+00:00)
+
+public.profiles
+  READ: protected - anon read 0 rows
+  note: seeded 5 rows
+
+0 exposed operation(s) in 1 table(s).
+[exit 0, expected 0]
+
+$ rlsentry attack --target https://x.supabase.co
+rlsentry: refusing --target https://x.supabase.co: attack mode only attacks a copy it builds itself from migrations (use --migrations DIR or --lab). Nothing was sent.
+[exit 2, expected 2]
+
+$ rlsentry attack --migrations slow   # then Ctrl-C (SIGINT) mid-attack
+during run: 2 process(es) naming a run dir
+rlsentry: interrupted (SIGINT); the copy was torn down
+[exit 2, expected 2]
+
+residue before: none
+residue after:  none
+all steps as expected

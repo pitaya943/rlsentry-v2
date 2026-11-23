@@ -1,0 +1,5 @@
+{
+  "public.lab_rls_off": {"READ": "EXPOSED"},
+  "public.lab_using_true": {"READ": "EXPOSED"},
+  "public.lab_no_policy": {"READ": "protected"}
+}

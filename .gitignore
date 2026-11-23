@@ -1,2 +1,4 @@
 # shilaycow builders work in these worktrees
 .shilaycow/worktrees/
+__pycache__/
+*.egg-info/
