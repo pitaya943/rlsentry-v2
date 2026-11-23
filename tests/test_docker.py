@@ -66,6 +66,7 @@ def test_lab_on_docker_matches_expected_and_leaves_no_container(fake_docker, sta
     assert _verdicts(out) == EXPECTED
     assert len(_runs(fake_docker)) == 2  # it really ran on the docker backend
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
     assert residue() == before
 
 
@@ -104,6 +105,7 @@ def test_auto_falls_back_to_local_when_docker_cannot_run(fake_docker, state_dir,
     assert "0 exposed operation(s) in 1 table(s)." in out
     assert _runs(fake_docker) == []
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
 
 
 def test_auto_falls_back_to_local_when_there_is_no_docker_cli(tmp_path, state_dir):
@@ -138,10 +140,11 @@ def test_docker_backend_that_cannot_run_exits_2(fake_docker, state_dir, fail, sa
     assert code == 2
     assert says in err
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
 
 
 @pytest.mark.parametrize("fail, says", [
-    ("db-exits", "postgres exited"),
+    ("db-exits", "postgres exited: (no log: the container is gone"),
     ("rest-run", "docker run"),
     ("wide-publish", "docker published"),
 ])
@@ -154,7 +157,18 @@ def test_docker_build_failure_exits_2_and_leaves_no_container(fake_docker, state
     assert says in err
     assert len(_runs(fake_docker)) >= 1
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
     assert residue() == before
+
+
+def test_teardown_looks_again_when_docker_rm_fails(fake_docker, state_dir):
+    fake_docker.fail("flaky-rm")
+    code, _, err = run_rlsentry("attack", "--backend", "docker", "--migrations",
+                                str(FIXTURES / "clean"), state_dir=state_dir)
+    assert code == 0, err
+    assert (fake_docker.dir / "rm-failed").exists()  # the first rm did fail
+    assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
 
 
 def test_docker_migration_failure_exits_2_and_leaves_no_container(fake_docker, state_dir):
@@ -164,6 +178,7 @@ def test_docker_migration_failure_exits_2_and_leaves_no_container(fake_docker, s
     assert code == 2
     assert "002_broken.sql" in err and "storage" in err
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
     assert residue() == before
 
 
@@ -181,6 +196,7 @@ def test_signal_mid_run_on_docker_leaves_no_container(fake_docker, state_dir, si
     assert proc.returncode == 2, err
     assert "interrupted" in err
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
     assert not any(_alive(pid) for c in containers for pid in c["pids"])
     assert residue() == before
 
@@ -203,7 +219,40 @@ def test_signal_while_docker_run_is_in_flight_leaves_no_container(fake_docker, s
     assert proc.returncode == 2, err
     assert "interrupted" in err
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
     assert residue() == before
+
+
+def test_docker_run_cut_off_by_its_timeout_leaves_no_container(fake_docker, tmp_path, monkeypatch):
+    """The client gives up, the daemon carries on and creates the container later: teardown
+    must wait for it rather than trust one look made too early."""
+    from rlsentry.backends import docker
+
+    before = residue()
+    monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr(docker, "RUN_TIMEOUT", 0.5)  # a daemon slower than the client waits
+    fake_docker.fail("slow-run")  # 1.5 s to create, whatever happens to the client
+    with pytest.raises(BuildError, match="no answer"):
+        with Sandbox(FIXTURES / "clean", backend="docker"):
+            pass
+    time.sleep(3)
+    assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
+    assert residue() == before
+
+
+def test_teardown_that_cannot_reach_the_daemon_says_so(fake_docker, tmp_path, monkeypatch, capsys):
+    from rlsentry.backends import docker
+
+    monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr(docker, "LATE_GRACE", 0.5)
+    with Sandbox(FIXTURES / "clean", backend="docker") as sb:
+        run_id = sb._run_id
+        fake_docker.fail_now("daemon")
+    err = capsys.readouterr().err
+    assert "could not confirm this run's containers are gone" in err
+    assert f"label=rlsentry.run={run_id}" in err
+    assert "Cannot connect to the Docker daemon" in err
 
 
 def test_next_docker_run_sweeps_a_killed_run(fake_docker, state_dir):
@@ -219,6 +268,7 @@ def test_next_docker_run_sweeps_a_killed_run(fake_docker, state_dir):
 
     assert code == 0, err
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
     assert not any(_alive(pid) for c in left for pid in c["pids"])
 
 
@@ -271,6 +321,7 @@ def test_each_backend_creates_the_cluster_with_the_superuser_the_sandbox_names(f
     finally:
         b.stop()
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
 
 
 # design §2 on this backend: the nonce check and the running state still guard the channel.
@@ -308,6 +359,7 @@ def test_docker_sandbox_answers_and_tears_down(fake_docker, tmp_path, monkeypatc
         assert sb.anon_channel().request("GET", "profiles", {"select": "*"}).status == 200
         assert len(fake_docker.containers()) == 2
     assert fake_docker.containers() == {}
+    assert fake_docker.volumes() == []
 
 
 # The real thing, where a Docker daemon answers (not in the environment this was built in).
@@ -321,10 +373,20 @@ def _real_daemon():
 
 
 @pytest.mark.skipif(not _real_daemon(), reason="no Docker daemon answers here")
-def test_lab_on_a_real_docker_daemon_matches_expected_and_leaves_no_container(state_dir):
-    code, out, err = run_rlsentry("attack", "--backend", "docker", "--lab", "--json", state_dir=state_dir)
-    assert code == 1, err
-    assert _verdicts(out) == EXPECTED
-    left = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=rlsentry.run"],
+def test_lab_on_a_real_docker_daemon_matches_expected_and_leaves_nothing(tmp_path, monkeypatch):
+    from rlsentry.attack import LAB, attack
+
+    monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
+    with Sandbox(LAB, backend="docker") as sb:
+        run_id = sb._run_id
+        mounts = json.loads(subprocess.run(
+            ["docker", "inspect", "--format", "{{json .Mounts}}", f"rlsentry-{run_id}-db"],
+            capture_output=True, text=True, check=True).stdout)
+        findings = attack(sb)
+    got = {f"{f.schema}.{f.table}": {op.value: r.outcome.value for op, r in f.results.items()}
+           for f in findings}
+    assert got == EXPECTED
+    assert [m for m in mounts if m["Type"] == "volume"] == []  # the data directory is a tmpfs
+    left = subprocess.run(["docker", "ps", "-a", "-q", "--filter", f"label=rlsentry.run={run_id}"],
                           capture_output=True, text=True, check=True).stdout.split()
     assert left == []

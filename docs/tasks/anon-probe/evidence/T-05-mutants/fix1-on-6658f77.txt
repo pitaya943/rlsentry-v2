@@ -1,0 +1,27 @@
+# Fix round 1: this round's tests/test_docker.py, tests/fakedocker.py and tests/conftest.py copied onto 6658f77 (the verified head), one edit at a time, run under iso.sh with -k as shown.
+# Baseline (no edit): only the new log_tail message test fails, as expected on the old code.
+## 6658f77 as is (baseline)
+FAILED tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[db-exits-postgres exited: (no log: the container is gone]
+1 failed, 7 passed, 21 deselected in 18.57s
+## 6658f77 + verifier A12 (teardown rm without -v)
+ rlsentry/backends/docker.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+FAILED tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+FAILED tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[db-exits-postgres exited: (no log: the container is gone]
+FAILED tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker run]
+FAILED tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker published]
+FAILED tests/test_docker.py::test_docker_migration_failure_exits_2_and_leaves_no_container
+FAILED tests/test_docker.py::test_signal_mid_run_on_docker_leaves_no_container[2]
+FAILED tests/test_docker.py::test_signal_mid_run_on_docker_leaves_no_container[15]
+FAILED tests/test_docker.py::test_signal_while_docker_run_is_in_flight_leaves_no_container
+8 failed, 21 deselected in 18.62s
+## 6658f77 + verifier A13 (sweep rm without -v)
+ rlsentry/backends/docker.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+FAILED tests/test_docker.py::test_next_docker_run_sweeps_a_killed_run - Asser...
+1 failed, 28 deselected in 3.40s
+## 6658f77 + verifier's timeout=0.5 edit (F2)
+ rlsentry/backends/docker.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+FAILED tests/test_docker.py::test_docker_run_cut_off_by_its_timeout_leaves_no_container
+1 failed, 28 deselected in 4.29s

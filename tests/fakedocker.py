@@ -6,13 +6,20 @@ the container's port (PostgREST through `--network container:<db>`, as the real 
 database container's network namespace). Any other image runs `sleep`. State lives in
 $FAKE_DOCKER_DIR: state.json (images, containers) and calls.jsonl (every argv, in order).
 
-$FAKE_DOCKER_FAIL, a comma-separated list, breaks the daemon on purpose:
+Volumes: `postgres:16` declares VOLUME /var/lib/postgresql/data, so a container of it gets an
+anonymous volume unless something (`--tmpfs`) is mounted there. As with Docker, `rm -v`
+removes a container's anonymous volumes and plain `rm` leaves them; a `--rm` container that
+exits on its own takes them with it.
+
+$FAKE_DOCKER_FAIL, a comma-separated list, breaks the daemon on purpose (the file
+$FAKE_DOCKER_DIR/fail, if present, adds to it while a run is going on):
   daemon        no daemon answers (every command fails)
   pull          pulls fail (Docker Hub's 429); no image is present beforehand
   remote        the current context's endpoint is a TCP host on another machine
   db-exits      the postgres container exits as soon as it starts
   rest-run      `docker run` of PostgREST fails after creating the container
   wide-publish  ports are published on every interface, whatever `-p` asks
+  flaky-rm      the first `docker rm` fails and removes nothing
   slow-run      the daemon takes 1.5 s to create a container, and creates it even if the
                 client that asked is killed meanwhile
 """
@@ -34,6 +41,9 @@ from pathlib import Path
 
 D = Path(os.environ["FAKE_DOCKER_DIR"])
 FAIL = set(filter(None, os.environ.get("FAKE_DOCKER_FAIL", "").split(",")))
+if (D / "fail").exists():
+    FAIL |= set(filter(None, (D / "fail").read_text().strip().split(",")))
+VOLUMES = {"postgres:16": ["/var/lib/postgresql/data"]}
 PG_BIN = sorted(glob.glob("/usr/lib/postgresql/*/bin"))[-1]
 
 
@@ -55,7 +65,7 @@ def running(c):
 
 def load():
     path = D / "state.json"
-    return json.loads(path.read_text()) if path.exists() else {"images": [], "containers": {}}
+    return json.loads(path.read_text()) if path.exists() else {"images": [], "containers": {}, "volumes": {}}
 
 
 def find(state, ref):
@@ -65,8 +75,11 @@ def find(state, ref):
     return None
 
 
-def remove(state, name):
+def remove(state, name, volumes):
     c = state["containers"].pop(name)
+    if volumes:
+        for v in c["volumes"]:
+            state["volumes"].pop(v, None)
     for pid in c["pids"]:
         if alive(pid):
             os.kill(pid, signal.SIGINT if c["image"] == "postgres:16" else signal.SIGTERM)
@@ -82,7 +95,7 @@ def prune(state):
     """`--rm`: a container whose process has exited is removed by the daemon."""
     for name, c in list(state["containers"].items()):
         if c["rm"] and c["status"] == "running" and not running(c):
-            remove(state, name)
+            remove(state, name, volumes=True)
 
 
 def spawn(c, argv, user=None):
@@ -104,7 +117,7 @@ def published(c, port):
 
 
 def run(state, args):
-    opts = {"rm": False, "name": None, "labels": {}, "ports": [], "env": {}, "network": None}
+    opts = {"rm": False, "name": None, "labels": {}, "ports": [], "env": {}, "network": None, "tmpfs": []}
     while args and args[0].startswith("-"):
         flag = args.pop(0)
         if flag == "-d":
@@ -112,7 +125,7 @@ def run(state, args):
         if flag == "--rm":
             opts["rm"] = True
             continue
-        if flag not in ("--name", "--label", "-p", "-e", "--network"):
+        if flag not in ("--name", "--label", "-p", "-e", "--network", "--tmpfs"):
             raise Exit(125, f"fake docker: unsupported flag {flag}")
         value = args.pop(0)
         if flag == "--name":
@@ -132,6 +145,8 @@ def run(state, args):
                 opts["env"][k] = os.environ[k]
         elif flag == "--network":
             opts["network"] = value
+        elif flag == "--tmpfs":
+            opts["tmpfs"].append(value.split(":")[0])
     image, command = args[0], args[1:]
     if image not in state["images"]:
         if "pull" in FAIL:
@@ -147,7 +162,12 @@ def run(state, args):
          "rm": opts["rm"], "pids": [], "status": "created",
          # Under /tmp: the pytest tmp dir is not reachable for the `postgres` user.
          "dir": tempfile.mkdtemp(prefix=f"fakedocker-{cid}-", dir="/tmp"),
-         "env": sorted(opts["env"]), "internal": {}}
+         "env": sorted(opts["env"]), "internal": {}, "volumes": []}
+    for path in VOLUMES.get(image, []):
+        if path not in opts["tmpfs"]:  # nothing mounted there: an anonymous volume
+            vol = secrets.token_hex(16)
+            state["volumes"][vol] = {"anonymous": True, "labels": {}, "mountpoint": path}
+            c["volumes"].append(vol)
     state["containers"][name] = c
     user = pwd.getpwnam("postgres") if os.geteuid() == 0 else None
     if user:
@@ -238,6 +258,7 @@ def locked(cmd, args):
     with open(D / "lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         state = load()
+        state.setdefault("volumes", {})
         prune(state)
         try:
             return dispatch(state, cmd, args)
@@ -306,15 +327,21 @@ def dispatch(state, cmd, args):
         if c is None:
             raise Exit(1, f"Error: No such container: {ref}")
         return (Path(c["dir"]) / "log").read_text(errors="replace")[-2000:]
+    if cmd == "volume" and args[0] == "ls":
+        return "\n".join(state["volumes"])
     if cmd == "rm":
         refs = [a for a in args if not a.startswith("-")]
+        flags = "".join(a.lstrip("-") for a in args if a.startswith("-"))
+        if "flaky-rm" in FAIL and not (D / "rm-failed").exists():
+            (D / "rm-failed").touch()
+            raise Exit(1, "Error response from daemon: removal of container is already in progress")
         missing = []
         for ref in refs:
             name = find(state, ref)
             if name is None:
                 missing.append(ref)
             else:
-                remove(state, name)
+                remove(state, name, volumes="v" in flags or "volumes" in flags)
                 print(ref)
         if missing:
             raise Exit(1, "\n".join(f"Error response from daemon: No such container: {m}" for m in missing))

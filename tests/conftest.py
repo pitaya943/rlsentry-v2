@@ -89,6 +89,14 @@ class FakeDocker:
     def fail(self, *modes):
         self._monkeypatch.setenv("FAKE_DOCKER_FAIL", ",".join(modes))
 
+    def fail_now(self, *modes):
+        """Break the daemon from now on, for a run already going on."""
+        (self.dir / "fail").write_text(",".join(modes))
+
+    def volumes(self):
+        path = self.dir / "state.json"
+        return list(json.loads(path.read_text()).get("volumes", {})) if path.exists() else []
+
     def containers(self):
         path = self.dir / "state.json"
         return json.loads(path.read_text())["containers"] if path.exists() else {}
@@ -105,6 +113,7 @@ class FakeDocker:
 def fake_docker(tmp_path, monkeypatch):
     fake = FakeDocker(tmp_path, monkeypatch)
     yield fake
+    (fake.dir / "fail").unlink(missing_ok=True)
     leftover = fake.containers()
     if leftover:
         subprocess.run(["docker", "rm", "-f", *leftover], capture_output=True)
