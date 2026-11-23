@@ -99,7 +99,7 @@ public.lab_using_true
 public.lab_value_policy
   READ: protected - anon read 0 rows
   INSERT: EXPOSED - anon inserted a row (HTTP 201), row 2 of the value search, with status = "pending" from the insert policy's constants
-    evidence: {"row": {"id": 7, "email": "email-6", "status": "pending"}, "source": "policy"}
+    evidence: {"row": {"id": 8, "email": "email-6", "status": "pending"}, "source": "policy"}
   UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204; PATCH without a filter: HTTP 204)
   DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204; DELETE without a filter: HTTP 204)
   note: seeded 5 rows

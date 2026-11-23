@@ -72,10 +72,10 @@ class Attacker:
                 return OpResult(Op.INSERT, Outcome.EXPOSED, basis, evidence, tries=tried)
             if str(_code(resp)).startswith("22") and not self._db.holds(table, row):
                 continue  # a value the column cannot hold (too long, say): no row, no answer
-            if not _refused(resp):
-                unclean.append(_answer(resp))
-            else:
+            if self._rls_answered(table, Op.INSERT, resp, row, None):
                 last = _answer(resp)
+            else:
+                unclean.append(_answer(resp))
         if unclean or not last:  # protected rests on at least one answer from RLS itself
             raise _unclean(table, Op.INSERT, unclean or ["no row sent was one the table can hold"])
         return OpResult(Op.INSERT, Outcome.PROTECTED, last, None, tries=tried)
@@ -121,7 +121,7 @@ class Attacker:
                 gone, new = _missing(before, after), _missing(after, before)
                 if gone:
                     return self._changed(op, method, how, key, gone, new, detached, len(answers))
-                if 200 <= resp.status < 300 or _refused(resp):
+                if self._rls_answered(table, op, resp, body, target):
                     break
                 unclean.append(answers[-1])
         if unclean:
@@ -145,6 +145,19 @@ class Attacker:
             evidence = {"rows_deleted": len(gone),
                         "deleted": {k: gone[0][k] for k in key} if key else gone[0]}
         return OpResult(op, Outcome.EXPOSED, basis, evidence, tries=tries)
+
+    def _rls_answered(self, table: str, op: Op, resp, values, target) -> bool:
+        """Was this write's refusal (42501, or a 2xx that changed nothing) row-level security's
+        or a missing grant's? A trigger can raise 42501, even with RLS's own message, or skip
+        a row. So the sandbox sends the same write as anon with the table's triggers off,
+        rolled back: only if that is refused the same way is it RLS's answer."""
+        if _refused(resp):
+            state, _ = self._db.as_anon(table, op.value, values, target)
+            return state == "42501"
+        if 200 <= resp.status < 300 and op is not Op.INSERT:
+            state, changed = self._db.as_anon(table, op.value, values, target)
+            return state in (None, "42501") and changed == 0
+        return False
 
     def _post(self, table: str, row: dict):
         """POST a row. On a unique violation (the policy let the row through; a seeded row holds

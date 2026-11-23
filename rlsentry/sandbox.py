@@ -113,6 +113,9 @@ $$;
 # a migration's function named like a built-in is never called by it.
 SCHEMAS_ON_PATH = "public, extensions"
 SUPERUSER = "supabase_admin"
+# For each statement on the postgres connection: a migration's function that never returns
+# (a domain CHECK, a trigger) stops the run instead of hanging it.
+STATEMENT_TIMEOUT = "30s"
 
 
 class BuildError(Exception):
@@ -256,7 +259,8 @@ class Sandbox:
         self._conn.execute(_SETUP_SQL)
         self._apply_migrations(pg_port)
         self._app = psycopg.connect(host="127.0.0.1", port=pg_port, user="postgres",
-                                    dbname="postgres", autocommit=True)
+                                    dbname="postgres", autocommit=True,
+                                    options=f"-c statement_timeout={STATEMENT_TIMEOUT}")
         self._seed()
         self._snapshot()
         self._conn.execute("insert into rlsentry_run.nonce values (%s)", (self._nonce,))
@@ -412,11 +416,46 @@ class Inspector:
         where = sql.SQL(" and ").join(
             sql.SQL("{} = %s::{}").format(sql.Identifier(k), sql.SQL(self._type(table, k)))
             for k in key) if key else sql.SQL("true")
-        return self._app.execute(
-            sql.SQL("select coalesce(bool_or({} is distinct from %s::{}), false) from {} where {}")
-            .format(sql.Identifier(column), sql.SQL(self._type(table, column)),
-                    sql.Identifier("public", table), where),
-            [value] + [str(row[k]) for k in key]).fetchone()[0]
+        with self._app.transaction(force_rollback=True):  # a cast can run a domain's CHECK
+            return self._app.execute(
+                sql.SQL("select coalesce(bool_or({} is distinct from %s::{}), false) from {} where {}")
+                .format(sql.Identifier(column), sql.SQL(self._type(table, column)),
+                        sql.Identifier("public", table), where),
+                [value] + [str(row[k]) for k in key]).fetchone()[0]
+
+    def as_anon(self, table: str, op: str, values: dict | None,
+                row: dict | None) -> tuple[str | None, int]:
+        """Send an attack's write again, as anon with anon's JWT claims but with the table's
+        (non-ALWAYS) triggers off, rolled back. Returns (SQLSTATE or None, rows affected).
+        `row` picks the row by primary key, as the attack's filter did; None means every row."""
+        rel = sql.Identifier("public", table)
+        record = sql.SQL("json_populate_record(null::{}, %s::json)").format(rel)
+        cols = sql.SQL(", ").join(map(sql.Identifier, values or {}))
+        params = [json.dumps(values)] if values else []
+        if op == "INSERT":
+            statement = (sql.SQL("insert into {} ({}) select {} from {}").format(rel, cols, cols, record)
+                         if values else sql.SQL("insert into {} default values").format(rel))
+        elif op == "UPDATE":
+            statement = sql.SQL("update {} set ({}) = (select {} from {})").format(
+                rel, cols, cols, record) if len(values) > 1 else sql.SQL(
+                "update {} set {} = (select {} from {})").format(rel, cols, cols, record)
+        else:
+            statement = sql.SQL("delete from {}").format(rel)
+        if row is not None and op != "INSERT":
+            key = self.primary_key(table)
+            statement += sql.SQL(" where ") + sql.SQL(" and ").join(
+                sql.SQL("{} = %s::{}").format(sql.Identifier(k), sql.SQL(self._type(table, k)))
+                for k in key)
+            params += [str(row[k]) for k in key]
+        try:
+            with self._app.transaction(force_rollback=True):
+                self._app.execute("set local session_replication_role = replica")
+                self._app.execute("set local role anon")
+                self._app.execute("select set_config('request.jwt.claims', %s, true)",
+                                  [json.dumps({"role": "anon", "iss": "rlsentry"})])
+                return None, self._app.execute(statement, params).rowcount
+        except psycopg.Error as err:
+            return err.sqlstate, 0
 
     def value_sources(self, table: str) -> list[tuple[str, str, object]]:
         """Value search's candidates (design §4) as (source, column, value), in this order:
@@ -461,7 +500,7 @@ class Inspector:
         no smallint.) An explicit cast truncates an over-long varchar: PostgREST then refuses the
         row (22001), which the attacker counts as a rejected candidate."""
         try:
-            with self._app.transaction():
+            with self._app.transaction(force_rollback=True):
                 self._app.execute(sql.SQL("select %s::{}").format(sql.SQL(typ)), [value])
         except psycopg.Error:
             return False

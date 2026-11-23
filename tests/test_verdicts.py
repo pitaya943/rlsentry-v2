@@ -305,3 +305,48 @@ create policy p on t for insert to anon with check (note is null);
     assert out == ""
     assert f"t: INSERT got no answer from row-level security, so it is neither exposed nor " \
            f"protected (HTTP 400 {errcode}: no)" in err
+
+
+_GATE = """
+create table inbox (id bigint generated always as identity primary key, note text);
+create function public.gate() returns trigger language plpgsql as $$
+begin
+  if current_user = 'anon' {when} then
+    {act}
+  end if;
+  return {ret};
+end $$;
+create trigger gate before {event} on inbox for each row execute function public.gate();
+alter table inbox enable row level security;
+{policies}
+"""
+_OPEN = ("create policy i on inbox for insert to anon with check (true);\n"
+         "create policy u on inbox for update to anon using (true);\n"
+         "create policy d on inbox for delete to anon using (true);\n")
+
+
+@pytest.mark.parametrize("op, gate", [
+    # PR #6 verdict D5, t42: the policy lets anon insert; a trigger refuses with RLS's code
+    ("INSERT", dict(event="insert", when="and new.note is distinct from 'magic'",
+                    act="raise exception 'note must be magic' using errcode = '42501';",
+                    ret="new", policies=_OPEN)),
+    # t42m: the common idiom, refusing anon outright
+    ("INSERT", dict(event="insert", when="", ret="new", policies=_OPEN,
+                    act="raise exception 'anon may not write' using errcode = '42501';")),
+    # ...forging row-level security's exact message
+    ("INSERT", dict(event="insert", when="", ret="new", policies=_OPEN,
+                    act="raise exception 'new row violates row-level security policy for table "
+                        "\"inbox\"' using errcode = '42501';")),
+    # upd42: open update and delete policies, a trigger refusing both with 42501
+    ("UPDATE", dict(event="update or delete", when="", ret="new", policies=_OPEN,
+                    act="raise exception 'anon may not change rows' using errcode = '42501';")),
+    ("DELETE", dict(event="delete", when="", ret="old", policies=_OPEN,
+                    act="raise exception 'anon may not delete rows' using errcode = '42501';")),
+    # a trigger that silently skips anon's update: 204 and nothing changed, but not RLS
+    ("UPDATE", dict(event="update", when="", ret="new", policies=_OPEN, act="return null;")),
+], ids=["t42", "t42m", "forged-message", "upd42", "del42", "update-skipped"])
+def test_a_refusal_from_the_tables_own_code_is_never_read_as_rls(state_dir, tmp_path, op, gate):
+    code, out, err = _run(tmp_path, state_dir, _GATE.format(**gate))
+    assert code == 2, out
+    assert out == ""
+    assert f"inbox: {op} got no answer from row-level security" in err

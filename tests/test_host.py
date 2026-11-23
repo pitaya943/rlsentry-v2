@@ -143,3 +143,69 @@ alter table t enable always trigger t_delete;
     assert list(victim_dir.iterdir()) == []
     assert code == 2, out
     assert "external program" in err
+
+
+def _domain_sandbox(tmp_path, monkeypatch, victim_dir):
+    """A copy whose column type is a domain whose CHECK calls a migration's function: it logs
+    each call and tries COPY TO PROGRAM (which only a superuser could run; the role postgres
+    gets insufficient_privilege, swallowed). Any cast to the column's type runs it."""
+    from rlsentry.sandbox import Sandbox
+    monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
+    return Sandbox(_migrations(tmp_path, f"""
+create table public.calls (who text);
+create function public.ok(v text) returns boolean language plpgsql as $$
+begin
+  insert into public.calls values (current_user);
+  begin
+    execute 'copy (select 1) to program ''touch {victim_dir}/x''';
+  exception when insufficient_privilege then null;
+  end;
+  if v = 'loop' then loop perform 1; end loop; end if;
+  return true;
+end $$;
+create domain public.word as text check (public.ok(value));
+create table public.d (id bigint generated always as identity primary key, w public.word,
+                       code varchar(3), check (w is distinct from 'x'));
+create unique index d_w_key on public.d (w);
+"""))
+
+
+def _uses_of_the_column_type(db):
+    """Every Inspector call that casts a value to the domain (and so runs its CHECK)."""
+    return {
+        "holds": lambda: db.holds("d", {"w": "a", "code": "ab"}),
+        "value_sources (_fits)": lambda: db.value_sources("d"),  # the CHECK's 'x' as a word
+        "would_change": lambda: db.would_change("d", "w", "b", None),
+        "fake_row": lambda: db.fake_row("d"),  # a trial insert: d has a CHECK
+        "as_anon": lambda: db.as_anon("d", "INSERT", {"w": "c"}, None),
+        "make_room": lambda: db.make_room("d", "d_w_key", {"w": "a"}),
+    }
+
+
+def test_inspector_runs_migration_code_only_as_postgres(tmp_path, monkeypatch, victim_dir):
+    with _domain_sandbox(tmp_path, monkeypatch, victim_dir) as sb:
+        db = sb.inspector()
+        for name, use in _uses_of_the_column_type(db).items():
+            calls = sb._conn.execute("select count(*) from public.calls").fetchone()[0]
+            use()
+            assert list(victim_dir.iterdir()) == [], name
+            if name != "make_room":  # make_room changes rows on purpose (restore() undoes it)
+                # it ran the CHECK, and kept none of what the CHECK did: rolled back
+                assert sb._conn.execute("select count(*) from public.calls").fetchone()[0] \
+                    == calls, name
+
+
+def test_a_migration_function_that_never_returns_cannot_hang_the_run(tmp_path, monkeypatch,
+                                                                     victim_dir):
+    import threading
+
+    import rlsentry.sandbox
+    monkeypatch.setattr(rlsentry.sandbox, "STATEMENT_TIMEOUT", "1s")
+    with _domain_sandbox(tmp_path, monkeypatch, victim_dir) as sb:
+        db, result = sb.inspector(), []
+        worker = threading.Thread(target=lambda: result.append(db.holds("d", {"w": "loop"})),
+                                  daemon=True)
+        worker.start()
+        worker.join(15)
+        assert not worker.is_alive(), "holds() still running: no statement timeout"
+        assert result == [False]
