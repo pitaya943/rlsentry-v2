@@ -18,10 +18,12 @@ step rlsentry attack --lab
 echo "docker run calls made by that run:"
 grep '^\["run"' "$fake/docker/calls.jsonl" | python3 -c 'import json,sys; [print("  docker " + " ".join(json.loads(l))) for l in sys.stdin]'
 step docker ps -a --filter label=rlsentry.run
+step docker volume ls
 echo "### images not present, and Docker Hub answers 429"
 rm "$fake/docker/state.json"
 FAKE_DOCKER_FAIL=pull step rlsentry attack --migrations tests/fixtures/clean
 FAKE_DOCKER_FAIL=pull step rlsentry attack --backend docker --migrations tests/fixtures/clean
 FAKE_DOCKER_FAIL=rest-run step rlsentry attack --backend docker --migrations tests/fixtures/clean
 step docker ps -a --filter label=rlsentry.run
+step docker volume ls
 rm -rf "$fake" "$RLSENTRY_STATE_DIR"

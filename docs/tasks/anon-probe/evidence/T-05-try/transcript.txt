@@ -21,7 +21,7 @@ Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docke
 
 $ rlsentry attack --migrations tests/fixtures/clean
 rlsentry: docker unavailable (no Docker daemon answers: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?); using the local backend
-rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-23T19:30:54+00:00)
+rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-23T21:34:38+00:00)
 
 public.profiles
   READ: protected - anon read 0 rows
@@ -38,7 +38,7 @@ rlsentry: could not build or attack the copy: docker backend: no Docker daemon a
 [exit 2]
 
 $ rlsentry attack --backend local --migrations tests/fixtures/clean
-rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-23T19:30:55+00:00)
+rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-23T21:34:39+00:00)
 
 public.profiles
   READ: protected - anon read 0 rows
@@ -52,7 +52,7 @@ public.profiles
 
 ### the same commands with tests/fakedocker.py as the docker CLI and daemon
 $ rlsentry attack --lab
-rlsentry 0.1.0 attack on lab (2026-11-23T19:30:57+00:00)
+rlsentry 0.1.0 attack on lab (2026-11-23T21:34:40+00:00)
 
 public.lab_delete_open
   READ: protected - anon read 0 rows
@@ -109,15 +109,18 @@ public.lab_using_true
 [exit 1]
 
 docker run calls made by that run:
-  docker run -d --rm --name rlsentry-ee9e32ce71b7-db --label rlsentry.run=ee9e32ce71b7 --label rlsentry.owner=vm/14146/482437 -p 127.0.0.1:43769:5432 -p 127.0.0.1:35631:3000 -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16 -c search_path="$user", public, extensions -c fsync=off -c synchronous_commit=off -c full_page_writes=off
-  docker run -d --rm --name rlsentry-ee9e32ce71b7-rest --label rlsentry.run=ee9e32ce71b7 --label rlsentry.owner=vm/14146/482437 --network container:rlsentry-ee9e32ce71b7-db -e PGRST_DB_URI -e PGRST_DB_SCHEMAS -e PGRST_DB_EXTRA_SEARCH_PATH -e PGRST_DB_ANON_ROLE -e PGRST_JWT_SECRET -e PGRST_LOG_LEVEL -e PGRST_SERVER_PORT postgrest/postgrest:v12.2.3
+  docker run -d --rm --name rlsentry-f3e5fc0b23da-db --label rlsentry.run=f3e5fc0b23da --label rlsentry.owner=vm/9324/1224799 -p 127.0.0.1:51243:5432 -p 127.0.0.1:43097:3000 --tmpfs /var/lib/postgresql/data -e POSTGRES_USER=postgres -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16 -c search_path="$user", public, extensions -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+  docker run -d --rm --name rlsentry-f3e5fc0b23da-rest --label rlsentry.run=f3e5fc0b23da --label rlsentry.owner=vm/9324/1224799 --network container:rlsentry-f3e5fc0b23da-db -e PGRST_DB_URI -e PGRST_DB_SCHEMAS -e PGRST_DB_EXTRA_SEARCH_PATH -e PGRST_DB_ANON_ROLE -e PGRST_JWT_SECRET -e PGRST_LOG_LEVEL -e PGRST_SERVER_PORT postgrest/postgrest:v12.2.3
 $ docker ps -a --filter label=rlsentry.run
+[exit 0]
+
+$ docker volume ls
 [exit 0]
 
 ### images not present, and Docker Hub answers 429
 $ rlsentry attack --migrations tests/fixtures/clean
 rlsentry: docker unavailable (cannot pull postgres:16: Error response from daemon: toomanyrequests: You have reached your pull rate limit.); using the local backend
-rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-23T19:30:59+00:00)
+rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-23T21:34:42+00:00)
 
 public.profiles
   READ: protected - anon read 0 rows
@@ -134,9 +137,12 @@ rlsentry: could not build or attack the copy: docker backend: cannot pull postgr
 [exit 2]
 
 $ rlsentry attack --backend docker --migrations tests/fixtures/clean
-rlsentry: could not build or attack the copy: docker run rlsentry-7881af1d9f16-rest failed: docker: Error response from daemon: driver failed programming external connectivity.
+rlsentry: could not build or attack the copy: docker run rlsentry-9989dd3a24a1-rest failed: docker: Error response from daemon: driver failed programming external connectivity.
 [exit 2]
 
 $ docker ps -a --filter label=rlsentry.run
+[exit 0]
+
+$ docker volume ls
 [exit 0]
 
