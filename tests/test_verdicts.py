@@ -281,3 +281,27 @@ def test_protected_needs_at_least_one_answer_from_rls():
 
     with pytest.raises(AttackError, match="t: INSERT got no answer from row-level security"):
         Attacker(Channel(), Db()).insert("t")
+
+
+@pytest.mark.parametrize("errcode", ["22023", "P0001"])
+def test_one_row_refused_by_the_tables_code_among_rls_refusals_is_never_protected(
+        state_dir, tmp_path, errcode):
+    # RLS refuses every row but the null-note one, which the policy accepts and a trigger
+    # refuses. The other rows' 42501s do not make the table protected.
+    code, out, err = _run(tmp_path, state_dir, f"""
+create table t (id bigint generated always as identity primary key, note text);
+create function public.no_null() returns trigger language plpgsql as $$
+begin
+  if current_user = 'anon' and new.note is null then
+    raise exception 'no' using errcode = '{errcode}';
+  end if;
+  return new;
+end $$;
+create trigger no_null before insert on t for each row execute function public.no_null();
+alter table t enable row level security;
+create policy p on t for insert to anon with check (note is null);
+""")
+    assert code == 2, out
+    assert out == ""
+    assert f"t: INSERT got no answer from row-level security, so it is neither exposed nor " \
+           f"protected (HTTP 400 {errcode}: no)" in err

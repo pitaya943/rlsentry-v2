@@ -4,3 +4,7 @@ FAILED tests/test_verdicts.py::test_a_class_22_refusal_from_a_trigger_or_policy_
 FAILED tests/test_verdicts.py::test_a_class_22_refusal_from_a_trigger_or_policy_is_never_protected[fresh-row-only-22023]
 FAILED tests/test_verdicts.py::test_protected_needs_at_least_one_answer_from_rls
 4 failed, 31 passed in 22.85s
+
+# Added after the mutant run (M03, M44), same setup against 7408659: [22023] fails; [P0001] passes there (7408659 already exits 2 for it) and is the test for M03
+FAILED tests/test_verdicts.py::test_one_row_refused_by_the_tables_code_among_rls_refusals_is_never_protected[22023]
+1 failed, 1 passed, 35 deselected in 2.20s
