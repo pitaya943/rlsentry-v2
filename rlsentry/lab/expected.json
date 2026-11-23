@@ -1,5 +1,9 @@
 {
-  "public.lab_rls_off": {"READ": "EXPOSED"},
-  "public.lab_using_true": {"READ": "EXPOSED"},
-  "public.lab_no_policy": {"READ": "protected"}
+  "public.lab_rls_off":      {"READ": "EXPOSED",   "INSERT": "EXPOSED",   "UPDATE": "EXPOSED",   "DELETE": "EXPOSED"},
+  "public.lab_using_true":   {"READ": "EXPOSED",   "INSERT": "protected", "UPDATE": "protected", "DELETE": "protected"},
+  "public.lab_insert_only":  {"READ": "protected", "INSERT": "EXPOSED",   "UPDATE": "protected", "DELETE": "protected"},
+  "public.lab_update_open":  {"READ": "protected", "INSERT": "protected", "UPDATE": "EXPOSED",   "DELETE": "protected"},
+  "public.lab_delete_open":  {"READ": "protected", "INSERT": "protected", "UPDATE": "protected", "DELETE": "EXPOSED"},
+  "public.lab_owner_only":   {"READ": "protected", "INSERT": "protected", "UPDATE": "protected", "DELETE": "protected"},
+  "public.lab_no_policy":    {"READ": "protected", "INSERT": "protected", "UPDATE": "protected", "DELETE": "protected"}
 }

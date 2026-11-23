@@ -1,4 +1,4 @@
-"""S-1, S-3, S-10: the lab run, its JSON report and exit codes."""
+"""S-1..S-4, S-10: the lab run, its JSON report and exit codes."""
 
 import json
 from pathlib import Path
@@ -46,19 +46,58 @@ def test_json_report_matches_schema(lab_run):
 
 
 LAB_TEXT_REPORT = """\
+public.lab_delete_open
+  READ: protected - anon read 0 rows
+  INSERT: protected - HTTP 401 42501: new row violates row-level security policy for table "lab_delete_open"
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204; PATCH without a filter: HTTP 204)
+  DELETE: EXPOSED - anon deleted 5 row(s) with DELETE without a filter (confirmed as superuser)
+    evidence: {"rows_deleted": 5, "deleted": {"id": 1}}
+  note: seeded 5 rows
+public.lab_insert_only
+  READ: protected - anon read 0 rows
+  INSERT: EXPOSED - anon inserted a row (HTTP 201)
+    evidence: {"row": {"id": 6, "email": "email-6", "note": "note-6"}}
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204; PATCH without a filter: HTTP 204)
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204; DELETE without a filter: HTTP 204)
+  note: seeded 5 rows
 public.lab_no_policy
   READ: protected - anon read 0 rows
+  INSERT: protected - HTTP 401 42501: new row violates row-level security policy for table "lab_no_policy"
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204; PATCH without a filter: HTTP 204)
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204; DELETE without a filter: HTTP 204)
+  note: seeded 5 rows
+public.lab_owner_only
+  READ: protected - anon read 0 rows
+  INSERT: protected - HTTP 401 42501: new row violates row-level security policy for table "lab_owner_only"
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204; PATCH without a filter: HTTP 204)
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204; DELETE without a filter: HTTP 204)
   note: seeded 5 rows
 public.lab_rls_off
   READ: EXPOSED - anon read 5 row(s)
     evidence: {"rows_read": 5, "row": {"id": 1, "email": "email-1", "note": "note-1"}}
+  INSERT: EXPOSED - anon inserted a row (HTTP 201)
+    evidence: {"row": {"id": 6, "email": "email-6", "note": "note-6"}}
+  UPDATE: EXPOSED - anon changed 1 row(s) with PATCH by primary key (confirmed as superuser)
+    evidence: {"before": {"id": 1, "email": "email-1", "note": "note-1"}, "after": {"id": 1, "email": "email-6", "note": "note-1"}}
+  DELETE: EXPOSED - anon deleted 1 row(s) with DELETE by primary key (confirmed as superuser)
+    evidence: {"rows_deleted": 1, "deleted": {"id": 1}}
+  note: seeded 5 rows
+public.lab_update_open
+  READ: protected - anon read 0 rows
+  INSERT: protected - HTTP 401 42501: new row violates row-level security policy for table "lab_update_open"
+  UPDATE: EXPOSED - anon changed 5 row(s) with PATCH without a filter (confirmed as superuser)
+    evidence: {"before": {"id": 1, "email": "email-1", "note": "note-1"}, "after": {"id": 1, "email": "email-6", "note": "note-1"}}
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204; DELETE without a filter: HTTP 204)
   note: seeded 5 rows
 public.lab_using_true
   READ: EXPOSED - anon read 5 row(s)
     evidence: {"rows_read": 5, "row": {"id": 1, "email": "email-1", "note": "note-1"}}
+  INSERT: protected - HTTP 401 42501: new row violates row-level security policy for table "lab_using_true"
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204; PATCH without a filter: HTTP 204)
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204; DELETE without a filter: HTTP 204)
   note: seeded 5 rows
 
-2 exposed operation(s) in 3 table(s).
+8 exposed operation(s) in 7 table(s).
 """
 
 
