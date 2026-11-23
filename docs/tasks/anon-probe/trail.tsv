@@ -3,3 +3,6 @@ time	who	decision	why	evidence
 2026-11-23T13:30Z	chief	Write probe on by default but must never persist a row; uncertain → verdict unknown	Write exposure is half the CVE; scanning real prod data makes persistence the worst-case failure	docs/tasks/anon-probe/brief.md S-4 S-5
 2026-11-23T13:30Z	chief	Reports never contain row values, only table, columns, row count	Exposed rows are likely third-party PII and reports land in CI logs	docs/tasks/anon-probe/brief.md S-6
 2026-11-23T13:30Z	chief	No service-role key accepted in this task	Scan must see exactly what an outsider sees; avoids handling a secret	docs/tasks/anon-probe/brief.md Assumptions
+2026-11-23T13:42Z	owner	Write probe: constraint-violation inference first, Prefer tx=rollback fallback, insert-then-delete forbidden	Owner chose A+B from the three options; C can leave rows in production when anon can insert but not delete	chat 2026-11-23; brief.md Assumptions
+2026-11-23T13:42Z	owner	Scope of first task confirmed: anon role, one live project, REST tables only	Owner confirmed restatement	chat 2026-11-23; docs/spec/roadmap.md
+2026-11-23T13:42Z	chief	Rebased task/anon-probe onto origin/main (was cut from stale local main lacking harness setup)	Branch must start from current main	752c73a

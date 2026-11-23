@@ -89,6 +89,13 @@ switched on but wrong (`using (true)`). Evidence of real access is not.
 - Write probing is on by default and must never persist a row; where that
   cannot be guaranteed for a table, the verdict is `unknown` (S-5). Update and
   delete are reported only as far as they can be tested without changing rows.
+- How writes are probed (owner's decision): first by inference — send an insert
+  built to fail a table constraint, so the database's answer shows whether the
+  row-level check let it through, with no row written; as fallback, an insert
+  the API is asked to roll back, used only when the project is shown to honour
+  that request. Inserting a real row and deleting it afterwards is never done.
+  The inference rests on the database checking row-level policies before
+  constraints; the design must prove that by running it, not assume it.
 - Row counts may be capped (e.g. "1000+") to keep the scan cheap.
 - A project with up to a few hundred exposed tables finishes in about a minute;
   requests are sequential-ish and rate-limited so the scan is not a load test.
