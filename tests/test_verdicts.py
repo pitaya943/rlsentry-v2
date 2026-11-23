@@ -231,3 +231,53 @@ create policy d on comments for delete to anon using (true);
     assert "by primary key" in delete["basis"]
     assert "referencing it were removed first" in delete["basis"]
     assert delete["evidence"] == {"rows_deleted": 1, "deleted": {"id": 1}}
+
+
+@pytest.mark.parametrize("columns, refusal", [
+    # PR #6 verdict D4: a trigger raising a class-22 error for anon
+    (", note text", "create function public.no_anon() returns trigger language plpgsql as $$\n"
+     "begin\n  if current_user = 'anon' then raise exception 'no' using errcode = '22023'; end if;\n"
+     "  return new;\nend $$;\n"
+     "create trigger no_anon before insert on t for each row execute function public.no_anon();\n"
+     "create policy p on t for insert to anon with check (true);\n"),
+    # ...and the policy itself dividing by zero (22012)
+    (", note text", "create policy p on t for insert to anon with check "
+     "(10 / (length(coalesce(note, '')) - length(coalesce(note, ''))) > 0);\n"),
+    # the fresh fake row is the only row sent (no column gives a candidate), answered 22023
+    ("", "create function public.no_anon() returns trigger language plpgsql as $$\n"
+     "begin\n  if current_user = 'anon' then raise exception 'no' using errcode = '22023'; end if;\n"
+     "  return new;\nend $$;\n"
+     "create trigger no_anon before insert on t for each row execute function public.no_anon();\n"
+     "create policy p on t for insert to anon with check (true);\n"),
+], ids=["trigger-22023", "policy-22012", "fresh-row-only-22023"])
+def test_a_class_22_refusal_from_a_trigger_or_policy_is_never_protected(state_dir, tmp_path,
+                                                                        columns, refusal):
+    # Only a value the column cannot hold (t_len's 22001) is a rejected candidate; the same
+    # class from the table's own code is no answer from row-level security.
+    code, out, err = _run(tmp_path, state_dir,
+                          f"create table t (id bigint generated always as identity primary key{columns});\n"
+                          "alter table t enable row level security;\n" + refusal)
+    assert code == 2, out
+    assert out == ""
+    assert "t: INSERT got no answer from row-level security" in err
+
+
+def test_protected_needs_at_least_one_answer_from_rls():
+    # Every row sent is one the table cannot hold (each answered 22001). No row the database
+    # built from them can make the table read protected: no table here can be built that way
+    # (rlsentry's own fake rows always fit), so the attacker is driven with stand-ins.
+    from rlsentry.attacker import Attacker, AttackError
+    from rlsentry.channel import Response
+
+    class Channel:
+        def request(self, method, table, query=None, body=None):
+            return Response(400, {"code": "22001", "message": "value too long"})
+
+    class Db:
+        fake_row = staticmethod(lambda table: {"code": "abcd"})
+        value_sources = staticmethod(lambda table: [("check", "code", "wxyz")])
+        rows = staticmethod(lambda table: [])
+        holds = staticmethod(lambda table, row: False)
+
+    with pytest.raises(AttackError, match="t: INSERT got no answer from row-level security"):
+        Attacker(Channel(), Db()).insert("t")

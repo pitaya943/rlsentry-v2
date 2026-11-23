@@ -70,14 +70,14 @@ class Attacker:
                 if made_room:
                     basis += f"; first the seeded row it collided with on {made_room} was removed"
                 return OpResult(Op.INSERT, Outcome.EXPOSED, basis, evidence, tries=tried)
-            if str(_code(resp)).startswith("22"):
+            if str(_code(resp)).startswith("22") and not self._db.holds(table, row):
                 continue  # a value the column cannot hold (too long, say): no row, no answer
             if not _refused(resp):
                 unclean.append(_answer(resp))
             else:
                 last = _answer(resp)
-        if unclean:
-            raise _unclean(table, Op.INSERT, unclean)
+        if unclean or not last:  # protected rests on at least one answer from RLS itself
+            raise _unclean(table, Op.INSERT, unclean or ["no row sent was one the table can hold"])
         return OpResult(Op.INSERT, Outcome.PROTECTED, last, None, tries=tried)
 
     def update(self, table: str) -> OpResult:

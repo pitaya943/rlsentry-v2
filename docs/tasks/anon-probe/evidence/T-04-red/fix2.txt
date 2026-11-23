@@ -1,0 +1,6 @@
+# Fix round 2: the new tests (tests/test_verdicts.py at the fix) against rlsentry at 7408659, isolated by iso.sh
+FAILED tests/test_verdicts.py::test_a_class_22_refusal_from_a_trigger_or_policy_is_never_protected[trigger-22023]
+FAILED tests/test_verdicts.py::test_a_class_22_refusal_from_a_trigger_or_policy_is_never_protected[policy-22012]
+FAILED tests/test_verdicts.py::test_a_class_22_refusal_from_a_trigger_or_policy_is_never_protected[fresh-row-only-22023]
+FAILED tests/test_verdicts.py::test_protected_needs_at_least_one_answer_from_rls
+4 failed, 31 passed in 22.85s

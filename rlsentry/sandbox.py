@@ -467,6 +467,18 @@ class Inspector:
             return False
         return True
 
+    def holds(self, table: str, row: dict) -> bool:
+        """Can the table's columns hold the row's values? Read into the table's row type as
+        PostgREST does (json_populate_record: typmods too, so an over-long varchar fails),
+        with no trigger or policy involved, and rolled back."""
+        try:
+            with self._app.transaction(force_rollback=True):
+                self._app.execute(sql.SQL("select json_populate_record(null::{}, %s::json)")
+                                  .format(sql.Identifier("public", table)), [json.dumps(row)])
+        except psycopg.Error:
+            return False
+        return True
+
     def make_room(self, table: str, constraint: str, row: dict) -> bool:
         """Remove the rows `row` collides with on unique `constraint`, so an insert anon's
         policy accepted can land (restore() puts them back). False if nothing was removed."""

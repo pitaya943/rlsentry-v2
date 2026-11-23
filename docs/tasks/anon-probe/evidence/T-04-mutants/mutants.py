@@ -18,8 +18,7 @@ MUTANTS = [
      "        raise _unclean(table, Op.READ, [_answer(resp)])",
      "        return OpResult(Op.READ, Outcome.PROTECTED, _answer(resp), None)"),
     ("INSERT: non-RLS answers ignored", AT,
-     "        if unclean:\n            raise _unclean(table, Op.INSERT, unclean)",
-     "        if False:\n            raise _unclean(table, Op.INSERT, unclean)"),
+     "        if unclean or not last:  # protected rests", "        if not last:  # protected rests"),
     ("UPDATE/DELETE: non-RLS answers ignored", AT,
      "        if unclean:\n            raise _unclean(table, op, unclean)",
      "        if False:\n            raise _unclean(table, op, unclean)"),
@@ -105,13 +104,26 @@ MUTANTS = [
      """                             + re.escape(name.replace('"', '""')) + '"', code):""",
      """                             + re.escape(name.replace('"', '""')) + '"', term):"""),
     ("a candidate the column cannot hold (22xxx) is unclean", AT,
-     '            if str(_code(resp)).startswith("22"):', '            if False:'),
+     '            if str(_code(resp)).startswith("22") and not self._db.holds(table, row):',
+     '            if False:'),
     ("2xx insert that wrote nothing reads EXPOSED", AT,
      "            if 200 <= resp.status < 300 and not created:  # e.g. a trigger returned null",
      "            if False:"),
     ("seeding that kept no row gives no reason", SD, "    if inserted and not rows:\n", "    if False:\n"),
     ("delete compares with the rows before the references were cleared", AT,
      "                    before = self._db.rows(table)  # references cleared: compare with that\n", ""),
+    # fix round 2 (PR #6 verdict D4), and the verifier's i and j from that verdict
+    ("any 22xxx is a rejected candidate (no check that the value is what failed)", AT,
+     '            if str(_code(resp)).startswith("22") and not self._db.holds(table, row):',
+     '            if str(_code(resp)).startswith("22"):'),
+    ("protected without any answer from RLS", AT,
+     "        if unclean or not last:  # protected rests", "        if unclean:  # protected rests"),
+    ("i: CHECK constants not checked against the column's type", SB,
+     """            out += [("check", c, v) for c, v in _constants(expr, columns)
+                    if self._fits(columns[c][0], v)]""",
+     """            out += [("check", c, v) for c, v in _constants(expr, columns)]"""),
+    ("j: insert evidence is the row sent", AT, '                evidence = {"row": created[0]}',
+     '                evidence = {"row": row}'),
 ]
 
 
