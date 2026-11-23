@@ -1,0 +1,39 @@
+# Tests and fixtures at 895f715 with rlsentry/{attacker,report,seed,sandbox}.py from 0ed19d7 (before value search and the RLS-answer rule), isolated (iso.sh). The 6 errors are the value_search module fixture (old code exits 0 there).
+_ test_an_answer_that_is_not_rls_is_never_protected[XX000-the REST layer failed (HTTP 500 XX000-READ-for select to anon using (public.boom())-None] _
+errcode = 'XX000', says = 'the REST layer failed (HTTP 500 XX000'
+        ("XX000", "the REST layer failed (HTTP 500 XX000"),  # PostgREST answers 500
+E       AssertionError: assert 'the REST layer failed (HTTP 500 XX000' in 'rlsentry: could not build or attack the copy: GET t: HTTP 500 XX000: boom\n'
+_ test_an_answer_that_is_not_rls_is_never_protected[XX000-the REST layer failed (HTTP 500 XX000-INSERT-None-before insert] _
+says = 'the REST layer failed (HTTP 500 XX000'
+        ("XX000", "the REST layer failed (HTTP 500 XX000"),  # PostgREST answers 500
+E       AssertionError: assert 'the REST layer failed (HTTP 500 XX000' in 'rlsentry: could not build or attack the copy: POST t: HTTP 500 XX000: boom\n'
+_ test_an_answer_that_is_not_rls_is_never_protected[XX000-the REST layer failed (HTTP 500 XX000-UPDATE-None-before update] _
+says = 'the REST layer failed (HTTP 500 XX000'
+        ("XX000", "the REST layer failed (HTTP 500 XX000"),  # PostgREST answers 500
+E       AssertionError: assert 'the REST layer failed (HTTP 500 XX000' in 'rlsentry: could not build or attack the copy: PATCH t: HTTP 500 XX000: boom\n'
+_ test_an_answer_that_is_not_rls_is_never_protected[XX000-the REST layer failed (HTTP 500 XX000-DELETE-None-before delete] _
+says = 'the REST layer failed (HTTP 500 XX000'
+        ("XX000", "the REST layer failed (HTTP 500 XX000"),  # PostgREST answers 500
+E       AssertionError: assert 'the REST layer failed (HTTP 500 XX000' in 'rlsentry: could not build or attack the copy: DELETE t: HTTP 500 XX000: boom\n'
+        ("XX000", "the REST layer failed (HTTP 500 XX000"),  # PostgREST answers 500
+        ("XX000", "the REST layer failed (HTTP 500 XX000"),  # PostgREST answers 500
+        ("XX000", "the REST layer failed (HTTP 500 XX000"),  # PostgREST answers 500
+        ("XX000", "the REST layer failed (HTTP 500 XX000"),  # PostgREST answers 500
+FAILED tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+FAILED tests/test_lab.py::test_lab_verdicts_match_expected - AssertionError: ...
+FAILED tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+FAILED tests/test_migrations.py::test_writes_stopped_by_a_constraint_after_the_policy_are_tried_again
+FAILED tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[XX000-the REST layer failed (HTTP 500 XX000-READ-for select to anon using (public.boom())-None]
+FAILED tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[XX000-the REST layer failed (HTTP 500 XX000-INSERT-None-before insert]
+FAILED tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[XX000-the REST layer failed (HTTP 500 XX000-UPDATE-None-before update]
+FAILED tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[XX000-the REST layer failed (HTTP 500 XX000-DELETE-None-before delete]
+FAILED tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[P0001-got no answer from row-level security-READ-for select to anon using (public.boom())-None]
+FAILED tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[P0001-got no answer from row-level security-INSERT-None-before insert]
+FAILED tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[P0001-got no answer from row-level security-UPDATE-None-before update]
+FAILED tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[P0001-got no answer from row-level security-DELETE-None-before delete]
+FAILED tests/test_verdicts.py::test_update_not_attempted_stops_the_run - Asse...
+FAILED tests/test_verdicts.py::test_update_avoids_a_unique_column_that_would_collide
+FAILED tests/test_verdicts.py::test_update_refused_only_by_a_unique_key_is_not_protected
+FAILED tests/test_verdicts.py::test_delete_a_foreign_key_stopped_is_tried_again_without_the_rows_referencing_it
+FAILED tests/test_writes.py::test_every_table_is_back_at_its_seeded_state_after_the_attack
+17 failed, 72 passed, 6 errors in 87.07s (0:01:27)
