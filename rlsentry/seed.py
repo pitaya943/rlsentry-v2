@@ -66,7 +66,27 @@ def _fk_order(conn, tables):
     return order
 
 
-def _seed_table(conn, schema: str, table: str) -> Seeded:
+@dataclass(frozen=True)
+class _Plan:
+    """How to make fake rows for one table."""
+    rel: sql.Identifier
+    generators: dict[str, tuple[str, Generator]]  # column -> (type, value for row i)
+    missing: list[str]  # NOT NULL columns nothing can fill
+    checks: dict[str, "_Check"]
+
+    def row(self, i: int) -> dict:
+        return {n: g(i) for n, (_, g) in self.generators.items()}
+
+    def insert(self) -> sql.Composed:
+        names = list(self.generators)
+        if not names:
+            return sql.SQL("insert into {} default values").format(self.rel)
+        return sql.SQL("insert into {} ({}) values ({})").format(
+            self.rel, sql.SQL(", ").join(map(sql.Identifier, names)),
+            sql.SQL(", ").join(sql.SQL("%s::" + self.generators[n][0]) for n in names))
+
+
+def _plan(conn, schema: str, table: str) -> _Plan:
     rel = sql.Identifier(schema, table)
     oid = conn.execute("select %s::regclass::oid", (rel.as_string(conn),)).fetchone()[0]
     fk = _fk_generators(conn, oid)
@@ -91,28 +111,40 @@ def _seed_table(conn, schema: str, table: str) -> Seeded:
         elif notnull:
             missing.append(f"{name} ({typ})"
                            + (f" references {parent}, which has no rows" if parent else ""))
+    return _Plan(rel, generators, missing, _checks(conn, oid))
 
+
+def _seed_table(conn, schema: str, table: str) -> Seeded:
+    plan = _plan(conn, schema, table)
     inserted, reason = 0, ""
-    if missing:
-        reason = f"no fake value for column(s) {', '.join(missing)}"
+    if plan.missing:
+        reason = f"no fake value for column(s) {', '.join(plan.missing)}"
     else:
-        names = list(generators)
-        insert = (sql.SQL("insert into {} ({}) values ({})").format(
-                      rel, sql.SQL(", ").join(map(sql.Identifier, names)),
-                      sql.SQL(", ").join(sql.SQL("%s::" + generators[n][0]) for n in names))
-                  if names else sql.SQL("insert into {} default values").format(rel))
-        checks = _checks(conn, oid)
         for i in range(ROWS_PER_TABLE):
-            err = _insert(conn, insert, names, {n: g(i) for n, (_, g) in generators.items()},
-                          checks, {n: t for n, (t, _) in generators.items()})
-            if err:
+            row, err = _insert(conn, plan, plan.row(i))
+            if row is None:
                 reason = err
             else:
                 inserted += 1
-    rows = conn.execute(sql.SQL("select count(*) from {}").format(rel)).fetchone()[0]
+    rows = conn.execute(sql.SQL("select count(*) from {}").format(plan.rel)).fetchone()[0]
     note = (f"seeded {inserted} rows" if inserted == ROWS_PER_TABLE else
             f"seeded {inserted} of {ROWS_PER_TABLE} rows; skipped: {reason}")
     return Seeded(rows, note, reason)
+
+
+def fake_row(conn, schema: str, table: str, i: int = ROWS_PER_TABLE) -> dict | None:
+    """A fake row (values as text) like the seeded ones, for row number i; None if a NOT NULL
+    column has no fake value. The default i is the row after the seeded ones, so it differs
+    from each of them. On a table with CHECKs, the row is one the table accepted in a
+    rolled-back insert (that uses up an identity value, so only there)."""
+    plan = _plan(conn, schema, table)
+    if plan.missing:
+        return None
+    if not plan.checks:
+        return plan.row(i)
+    with conn.transaction(force_rollback=True):
+        accepted, _ = _insert(conn, plan, plan.row(i))
+    return accepted or plan.row(i)
 
 
 def _generator(conn, column: str, typ: str, typoid: int, elemoid: int) -> Generator | None:
@@ -132,7 +164,8 @@ def _generator(conn, column: str, typ: str, typoid: int, elemoid: int) -> Genera
     if base in _NUMERIC:
         return lambda i: f"{i + 1}.5"
     if base in _TEXT:
-        return lambda i: f"{column}-{i + 1}"  # the ::varchar(n) cast truncates
+        length = int(typ.split("(")[1].split(")")[0]) if "(" in typ else None
+        return lambda i: f"{column}-{i + 1}"[:length]  # an insert through PostgREST has no cast
     if base == "boolean":
         return lambda i: "true" if i % 2 == 0 else "false"
     if base == "uuid":
@@ -192,39 +225,39 @@ def _checks(conn, oid: int) -> dict[str, _Check]:
     return checks
 
 
-def _insert(conn, insert, names, row, checks, types) -> str:
+def _insert(conn, plan: _Plan, row: dict) -> tuple[dict | None, str]:
     """Insert one row. While a CHECK rejects it, retry with the constants that CHECK mentions
-    for its columns (at most CHECK_TRIES_PER_ROW tries in all). Returns "" on success, else
-    why the row was skipped."""
-    tries = 0
-    err = _try(conn, insert, names, row)
+    for its columns (at most CHECK_TRIES_PER_ROW tries in all). Returns the row inserted, or
+    None and why the row was skipped."""
+    insert, tries = plan.insert(), 0
+    err = _try(conn, insert, row)
     while err is not None:
         if not isinstance(err, psycopg.errors.CheckViolation):
-            return str(err).splitlines()[0]
+            return None, str(err).splitlines()[0]
         name = err.diag.constraint_name
-        check = checks[name]
+        check = plan.checks[name]
         cols = [c for c in check.columns if c in row]
-        options = [[row[c]] + (check.numbers if types[c].split("(")[0] in _NUMERIC
+        options = [[row[c]] + (check.numbers if plan.generators[c][0].split("(")[0] in _NUMERIC
                                else check.strings) for c in cols]
         for combo in itertools.islice(itertools.product(*options), 1, None):
             if tries == CHECK_TRIES_PER_ROW:
-                return f"no value tried satisfies check {name}"
+                return None, f"no value tried satisfies check {name}"
             tries += 1
             attempt = dict(row, **dict(zip(cols, combo)))
-            err = _try(conn, insert, names, attempt)
+            err = _try(conn, insert, attempt)
             if err is None or (isinstance(err, psycopg.errors.CheckViolation)
                                and err.diag.constraint_name != name):
                 row = attempt  # this CHECK is satisfied; on to the next one, if any
                 break
         else:
-            return f"no value tried satisfies check {name}"
-    return ""
+            return None, f"no value tried satisfies check {name}"
+    return row, ""
 
 
-def _try(conn, insert, names, values) -> psycopg.Error | None:
+def _try(conn, insert, values: dict) -> psycopg.Error | None:
     try:
         with conn.transaction():
-            conn.execute(insert, [values[n] for n in names])
+            conn.execute(insert, list(values.values()))
     except psycopg.Error as err:
         return err
     return None

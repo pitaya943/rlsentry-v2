@@ -26,9 +26,11 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg
+from psycopg import sql
+from psycopg.rows import dict_row
 
 from rlsentry.channel import AnonChannel, anon_jwt
-from rlsentry.seed import seed
+from rlsentry.seed import fake_row, seed
 
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
@@ -53,8 +55,8 @@ alter database postgres set search_path = "$user", public, extensions;
 
 -- The auth stand-in: the parts of Supabase's auth schema that migrations and policies use.
 -- The functions read the claims PostgREST sets for each request, as Supabase's do.
--- No USAGE grants for anon: a policy stores resolved objects, so it runs without them.
 create schema auth;
+grant usage on schema auth to anon, authenticated, service_role;
 create table auth.users (
   id uuid primary key default gen_random_uuid(),
   aud varchar(255) default 'authenticated',
@@ -169,6 +171,23 @@ class Sandbox:
             raise RuntimeError("anon_channel() needs a running sandbox")
         return AnonChannel(self._rest_port, anon_jwt(self._jwt_secret), self._verify)
 
+    def inspector(self) -> "Inspector":
+        if not self._running:
+            raise RuntimeError("inspector() needs a running sandbox")
+        return Inspector(self._conn)
+
+    def restore(self) -> None:
+        """Put every table back to its seeded state, so one attack cannot hide another (§4)."""
+        with self._conn.transaction():
+            # replica: no FK checks or triggers while the tables are briefly empty
+            self._conn.execute("set local session_replication_role = replica")
+            for i, table in enumerate(self.tables):
+                cols = sql.SQL(", ").join(map(sql.Identifier, _stored_columns(self._conn, table)))
+                target = sql.Identifier("public", table)
+                self._conn.execute(sql.SQL("delete from {}").format(target))
+                self._conn.execute(sql.SQL("insert into {} ({}) overriding system value select {} from {}")
+                                   .format(target, cols, cols, sql.Identifier("rlsentry_run", f"seeded_{i}")))
+
     # build (design §3)
 
     def _build(self) -> None:
@@ -201,6 +220,7 @@ class Sandbox:
         self._conn.execute(_SETUP_SQL)
         self._apply_migrations(bins["psql"], pg_port)
         self._seed()
+        self._snapshot()
         self._conn.execute("insert into rlsentry_run.nonce values (%s)", (self._nonce,))
 
         self._rest_port = _free_port()
@@ -252,6 +272,11 @@ class Sandbox:
             # An empty table says nothing about its policies: never attack a partial copy.
             raise BuildError("could not seed " + "; ".join(empty))
         self.notes = {t: [r.note] for (s, t), r in seeded.items() if s == "public"}
+
+    def _snapshot(self) -> None:
+        for i, table in enumerate(self.tables):
+            self._conn.execute(sql.SQL("create table {} as select * from {}").format(
+                sql.Identifier("rlsentry_run", f"seeded_{i}"), sql.Identifier("public", table)))
 
     def _verify(self) -> None:
         """Called by the channel before its first request: is this still our copy?"""
@@ -308,7 +333,37 @@ class Sandbox:
         self._old_handlers.clear()
 
 
+class Inspector:
+    """Superuser reads the attacker uses to confirm what its requests really did (design §4).
+
+    It holds the sandbox's superuser connection and never hands it out."""
+
+    def __init__(self, conn: psycopg.Connection):
+        self._conn = conn
+
+    def primary_key(self, table: str) -> list[str]:
+        return [r[0] for r in self._conn.execute(
+            "select a.attname from pg_index i join pg_attribute a"
+            " on a.attrelid = i.indrelid and a.attnum = any(i.indkey)"
+            " where i.indrelid = format('public.%%I', %s::text)::regclass and i.indisprimary"
+            " order by array_position(i.indkey, a.attnum)", (table,))]
+
+    def rows(self, table: str) -> list[dict]:
+        cur = self._conn.cursor(row_factory=dict_row)
+        return cur.execute(sql.SQL("select * from {}").format(sql.Identifier("public", table))).fetchall()
+
+    def fake_row(self, table: str) -> dict[str, str] | None:
+        """A fresh fake row, different from every seeded one; None if one cannot be made."""
+        return fake_row(self._conn, "public", table)
+
+
 # helpers
+
+def _stored_columns(conn: psycopg.Connection, table: str) -> list[str]:
+    return [r[0] for r in conn.execute(
+        "select attname from pg_attribute where attrelid = format('public.%%I', %s::text)::regclass"
+        " and attnum > 0 and not attisdropped and attgenerated = '' order by attnum", (table,))]
+
 
 def _find_binaries() -> dict[str, str]:
     found, missing = {}, []

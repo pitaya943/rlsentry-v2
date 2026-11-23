@@ -1,0 +1,92 @@
+    6 failed, 13 passed in 11.26s 
+M00 update trusts 2xx instead of superuser: KILLED (6 failed)
+      tests/test_lab.py::test_lab_verdicts_match_expected
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_lab.py::test_clean_migrations_exit_zero
+      tests/test_writes.py::test_update_evidence_is_before_and_after[lab_update_open]
+      tests/test_writes.py::test_2xx_that_changed_nothing_is_protected[update_hidden-UPDATE]
+      tests/test_writes.py::test_every_table_is_back_at_its_seeded_state_after_the_attack
+    6 failed, 13 passed in 11.80s 
+M01 delete trusts 2xx instead of superuser: KILLED (6 failed)
+      tests/test_lab.py::test_lab_verdicts_match_expected
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_lab.py::test_clean_migrations_exit_zero
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_delete_open-5]
+      tests/test_writes.py::test_2xx_that_changed_nothing_is_protected[delete_hidden-DELETE]
+      tests/test_writes.py::test_every_table_is_back_at_its_seeded_state_after_the_attack
+    4 failed, 15 passed in 10.83s 
+M02 no restore at all: KILLED (4 failed)
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_rls_off-1]
+      tests/test_writes.py::test_every_table_is_back_at_its_seeded_state_after_the_attack
+      tests/test_writes.py::test_each_write_starts_from_the_seeded_state
+    1 failed, 18 passed in 10.93s 
+M03 no restore after INSERT: KILLED (1 failed)
+      tests/test_writes.py::test_each_write_starts_from_the_seeded_state
+    2 failed, 17 passed in 11.09s 
+M04 no restore after UPDATE: KILLED (2 failed)
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_rls_off-1]
+    1 failed, 18 passed in 11.40s 
+M05 no restore after DELETE: KILLED (1 failed)
+      tests/test_writes.py::test_each_write_starts_from_the_seeded_state
+    16 failed, 3 passed in 10.88s 
+M06 restore leaves updated values (re-inserts nothing): KILLED (16 failed)
+      tests/test_lab.py::test_lab_verdicts_match_expected
+      tests/test_lab.py::test_exposed_read_shows_count_and_a_seeded_row[lab_rls_off]
+      tests/test_lab.py::test_exposed_read_shows_count_and_a_seeded_row[lab_using_true]
+      tests/test_lab.py::test_protected_read_has_no_evidence
+      tests/test_lab.py::test_json_report_matches_schema
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_lab.py::test_clean_migrations_exit_zero
+      tests/test_writes.py::test_insert_evidence_is_the_row_created
+      tests/test_writes.py::test_update_evidence_is_before_and_after[lab_rls_off]
+      tests/test_writes.py::test_update_evidence_is_before_and_after[lab_update_open]
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_rls_off-1]
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_delete_open-5]
+      tests/test_writes.py::test_2xx_that_changed_nothing_is_protected[update_hidden-UPDATE]
+      tests/test_writes.py::test_2xx_that_changed_nothing_is_protected[delete_hidden-DELETE]
+      tests/test_writes.py::test_every_table_is_back_at_its_seeded_state_after_the_attack
+      tests/test_writes.py::test_each_write_starts_from_the_seeded_state
+    4 failed, 15 passed in 12.31s 
+M07 insert verdict: 2xx judged protected: KILLED (4 failed)
+      tests/test_lab.py::test_lab_verdicts_match_expected
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_insert_evidence_is_the_row_created
+      tests/test_writes.py::test_every_table_is_back_at_its_seeded_state_after_the_attack
+    5 failed, 14 passed in 12.55s 
+M08 update/delete: no unfiltered attempt: KILLED (5 failed)
+      tests/test_lab.py::test_lab_verdicts_match_expected
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_update_evidence_is_before_and_after[lab_update_open]
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_delete_open-5]
+      tests/test_writes.py::test_every_table_is_back_at_its_seeded_state_after_the_attack
+    3 failed, 16 passed in 11.86s 
+M09 update/delete: no by-key attempt: KILLED (3 failed)
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_rls_off-1]
+      tests/test_writes.py::test_each_write_starts_from_the_seeded_state
+    2 failed, 17 passed in 11.43s 
+M10 insert evidence = the row sent, not the row created: KILLED (2 failed)
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_insert_evidence_is_the_row_created
+    3 failed, 16 passed in 12.07s 
+M11 update evidence: after = before: KILLED (3 failed)
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_update_evidence_is_before_and_after[lab_rls_off]
+      tests/test_writes.py::test_update_evidence_is_before_and_after[lab_update_open]
+    2 failed, 17 passed in 11.63s 
+M12 delete evidence: count always 1: KILLED (2 failed)
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_delete_open-5]
+    2 failed, 17 passed in 11.67s 
+M13 delete evidence: wrong key: KILLED (2 failed)
+      tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+      tests/test_writes.py::test_delete_evidence_is_the_deleted_key[lab_delete_open-5]
+    2 failed, 17 passed in 12.06s 
+M14 auth.uid() always a fixed user: KILLED (2 failed)
+      tests/test_writes.py::test_auth_uid_is_the_jwt_subject_and_null_for_anon[{"role": "anon"}-None]
+      tests/test_writes.py::test_auth_uid_is_the_jwt_subject_and_null_for_anon[{"role": "anon", "sub": "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"}-6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b]
+    1 failed, 18 passed in 11.63s 
+M15 unfillable table attacked anyway (no AttackError): KILLED (1 failed)
+      tests/test_writes.py::test_a_table_without_a_fake_row_is_not_called_protected

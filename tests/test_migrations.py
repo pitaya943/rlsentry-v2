@@ -73,6 +73,9 @@ def test_identifiers_quoted_and_partly_seedable_tables_noted(state_dir):
     assert row == {"it's": "it's", "Mixed Case": "it's", 'lab"el\\s': ['lab"el\\s-1'],
                    "spot": None}
     assert findings["settings"]["results"]["READ"]["evidence"]["row"] == {"id": 1, "value": "x"}
+    # The insert attack's row satisfies the CHECK too, so the open table is shown open.
+    assert findings['q"uote']["results"]["INSERT"]["outcome"] == "EXPOSED"
+    assert findings['q"uote']["results"]["INSERT"]["evidence"]["row"]["Mixed Case"] == "it's"
 
 
 @pytest.mark.parametrize("fixture, file, named", [

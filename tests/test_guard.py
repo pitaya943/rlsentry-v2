@@ -187,7 +187,7 @@ def test_attack_requests_ignore_proxy_environment_variables(listener, tmp_path):
                          capture_output=True, text=True, timeout=120)
     assert proxy.paths == []
     assert run.returncode == 1, run.stderr
-    assert "2 exposed operation(s) in 3 table(s)." in run.stdout
+    assert "8 exposed operation(s) in 7 table(s)." in run.stdout
 
 
 def _listening_addresses(pid):

@@ -4,7 +4,7 @@ Five tickets. T-01 is the shared groundwork and the first runnable slice; T-02, 
 T-05 can then run in parallel (they touch different modules); T-04 needs T-02 and T-03.
 
 ```
-T-01 ─┬─> T-02 (writes) ──┐
+T-01 ─┬─> T-02 (writes) ──┐   (re-cut: T-05 runs after T-02 and T-03, see trail)
       ├─> T-03 (real migrations + seeding) ─┴─> T-04 (value search, full lab = S-9)
       └─> T-05 (docker backend)
 ```
