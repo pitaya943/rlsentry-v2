@@ -1,0 +1,107 @@
+# T-04: python3 docs/tasks/anon-probe/evidence/T-04-mutants/mutants.py on 19eb9bd, full suite per mutant with -x (first failing test shown), isolated by T-03's iso.sh. 35 of 35 killed.
+# Earlier run: 'UPDATE: column order ignores unique' and 'policies of other commands used' SURVIVED; the first led to removing the ordering (retrying the next column covers F4), the second to test_value_search_tries_only_the_insert_policies_constants.
+M01 5xx not caught (>= 600)
+     1 failed, 73 passed in 61.19s (0:01:01)
+       tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[XX000-the
+M02 READ: a non-RLS answer reads protected
+     1 failed, 77 passed in 65.05s (0:01:05)
+       tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[P0001-got
+M03 INSERT: non-RLS answers ignored
+     1 failed, 78 passed in 60.55s (0:01:00)
+       tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[P0001-got
+M04 UPDATE/DELETE: non-RLS answers ignored
+     1 failed, 79 passed in 67.73s (0:01:07)
+       tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[P0001-got
+M05 INSERT: any 4xx counts as RLS's refusal
+     1 failed, 45 passed in 34.42s
+       tests/test_migrations.py::test_writes_stopped_by_a_constraint_after_the_policy_are_tried_again
+M06 UPDATE with no settable column reads protected
+     1 failed, 81 passed in 68.41s (0:01:08)
+       tests/test_verdicts.py::test_update_not_attempted_stops_the_run[-no
+M07 UPDATE with no differing value reads protected
+     1 failed, 82 passed in 67.93s (0:01:07)
+       tests/test_verdicts.py::test_update_not_attempted_stops_the_run[,
+M08 UPDATE writes values already there
+     1 failed, 45 passed in 35.45s
+       tests/test_migrations.py::test_writes_stopped_by_a_constraint_after_the_policy_are_tried_again
+M09 UPDATE: no other column after a 409
+     1 failed, 44 passed in 34.78s
+       tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
+M10 UPDATE: key columns not last
+     1 failed, 84 passed in 74.40s (0:01:14)
+       tests/test_verdicts.py::test_update_sets_a_key_column_last
+M11 DELETE: no retry without referencing rows
+     1 failed, 44 passed in 33.93s
+       tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
+M12 INSERT: no room made on a unique collision
+     1 failed, 44 passed in 32.69s
+       tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
+M13 no value search
+     1 failed, 13 passed in 5.83s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M14 no bound on value search
+     1 failed, 72 passed in 56.53s
+       tests/test_verdicts.py::test_value_search_is_bounded_and_says_how_many_rows_it_tried
+M15 source not named in evidence
+     1 failed, 38 passed in 27.64s
+       tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+M16 no policy constants
+     1 failed, 13 passed in 6.45s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M17 no CHECK constants
+     1 failed, 45 passed in 34.66s
+       tests/test_migrations.py::test_writes_stopped_by_a_constraint_after_the_policy_are_tried_again
+M18 no enum labels
+     1 failed, 68 passed in 55.70s
+       tests/test_verdicts.py::test_value_search_finds_the_row_a_policy_accepts_and_names_its_source[vs_enum-enum-accepted2]
+M19 no seeded values
+     1 failed, 38 passed in 27.48s
+       tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+M20 no null
+     1 failed, 38 passed in 27.75s
+       tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+M21 no all-columns-at-once candidate
+     1 failed, 66 passed in 57.81s
+       tests/test_verdicts.py::test_value_search_finds_the_row_a_policy_accepts_and_names_its_source[vs_two-policy-accepted0]
+M22 numbers: no n+1
+     1 failed, 67 passed in 57.84s
+       tests/test_verdicts.py::test_value_search_finds_the_row_a_policy_accepts_and_names_its_source[vs_number-policy-accepted1]
+M23 policies of other commands used
+     1 failed, 71 passed in 60.69s (0:01:00)
+       tests/test_verdicts.py::test_value_search_tries_only_the_insert_policies_constants
+M24 migrations run as the superuser
+     8 passed, 1 error in 0.96s
+       tests/test_guard.py::test_first_request_is_refused_when_the_nonce_is_not_ours[update
+M25 postgres role is a superuser
+     1 failed, 15 passed in 8.77s
+       tests/test_host.py::test_migration_cannot_reach_the_host[copy
+M26 seeding on the superuser's connection
+     1 failed, 25 passed in 17.50s
+       tests/test_host.py::test_trigger_fired_while_seeding_cannot_reach_the_host
+M27 restore on the superuser's connection   (re-run after the mutant was corrected to move all of restore())
+     1 failed, 32 passed in 25.53s
+       tests/test_host.py::test_trigger_fired_while_restoring_cannot_reach_the_host
+M28 superuser connection searches public
+     1 failed, 26 passed in 21.53s
+       tests/test_host.py::test_function_shadowing_a_builtin_is_never_called_by_rlsentry
+M29 no default grants on postgres's tables
+     1 failed, 13 passed in 6.41s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M30 postgres cannot create roles
+     1 failed, 31 passed in 25.76s
+       tests/test_host.py::test_migrations_do_what_supabase_lets_its_postgres_role_do
+M31 postgres does not bypass RLS
+     1 failed, 31 passed in 24.23s
+       tests/test_host.py::test_migrations_do_what_supabase_lets_its_postgres_role_do
+M32 pg_stat_statements not installed
+     1 failed, 31 passed in 23.87s
+       tests/test_host.py::test_migrations_do_what_supabase_lets_its_postgres_role_do
+M33 postgres has no rights on auth.users
+     1 failed, 27 passed in 19.48s
+       tests/test_host.py::test_what_built_as_superuser_still_builds[supabase_app]
+M34 postgres cannot create in public
+     8 passed, 1 error in 0.87s
+       tests/test_guard.py::test_first_request_is_refused_when_the_nonce_is_not_ours[update
+M35 one search path: PostgREST's dropped
+     1 failed, 30 passed in 23.10s
+       tests/test_host.py::test_what_built_as_superuser_still_builds[ext_unqualified]

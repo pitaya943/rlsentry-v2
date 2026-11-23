@@ -77,9 +77,10 @@ MUTANTS = [
     ("seeding on the superuser's connection", SB,
      '        seeded = seed(self._app, [("public", t) for t in self.tables])',
      '        seeded = seed(self._conn, [("public", t) for t in self.tables])'),
-    ("restore on the superuser's connection", SB,
-     "        with self._app.transaction():\n            # replica: no FK checks or triggers while the tables are briefly empty\n            self._app.execute(\"set local session_replication_role = replica\")",
-     "        with self._conn.transaction():\n            # replica: no FK checks or triggers while the tables are briefly empty\n            self._conn.execute(\"set local session_replication_role = replica\")"),
+    ("restore on the superuser's connection", SB, "    def restore(self) -> None:\n",
+     "    def restore(self) -> None:\n        self._app, self._conn = self._conn, self._app\n"
+     "        try:\n            return self._restore()\n        finally:\n"
+     "            self._app, self._conn = self._conn, self._app\n\n    def _restore(self) -> None:\n"),
     ("superuser connection searches public", SB, '                                   options="-c search_path=pg_catalog")',
      '                                   )'),
     ("no default grants on postgres's tables", SB,
