@@ -1,0 +1,5 @@
+time	who	decision	why	evidence
+2026-11-23T13:30Z	chief	Split rlsentry into a chain; first task is anon-probe (live black-box scan with anon key)	The request is a whole product; the black-box probe is what directly answers "verification, not reminders" and fixes the verdict/report model the rest builds on	docs/spec/roadmap.md
+2026-11-23T13:30Z	chief	Write probe on by default but must never persist a row; uncertain → verdict unknown	Write exposure is half the CVE; scanning real prod data makes persistence the worst-case failure	docs/tasks/anon-probe/brief.md S-4 S-5
+2026-11-23T13:30Z	chief	Reports never contain row values, only table, columns, row count	Exposed rows are likely third-party PII and reports land in CI logs	docs/tasks/anon-probe/brief.md S-6
+2026-11-23T13:30Z	chief	No service-role key accepted in this task	Scan must see exactly what an outsider sees; avoids handling a secret	docs/tasks/anon-probe/brief.md Assumptions
