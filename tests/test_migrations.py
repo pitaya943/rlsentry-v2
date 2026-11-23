@@ -81,6 +81,8 @@ def test_identifiers_quoted_and_partly_seedable_tables_noted(state_dir):
 @pytest.mark.parametrize("fixture, file, named", [
     ("broken", "002_broken.sql", ["line 2", "storage.buckets", 'relation "storage.buckets" does not exist']),
     ("no_extension", "001_postgis.sql", ["line 2", 'extension "postgis"']),
+    # The line of the missing object, not of the statement's first line.
+    ("broken_multiline", "001_files.sql", ["line 4", 'schema "storage" does not exist']),
     # One transaction per file, as Supabase applies them: a new enum value is not usable
     # in the file that adds it.
     ("enum_same_file", "002_use.sql", ["line 2", 'unsafe use of new value "closed"']),
@@ -177,3 +179,14 @@ def test_migration_split_where_postgres_splits_it(state_dir):
     assert code == 1, err  # RLS off
     row = _findings(out)["semi;colon"]["results"]["READ"]["evidence"]["row"]
     assert (row["plain"], row["escaped"]) == ("a;b", "it's; fine")
+
+
+def test_failing_statement_named_by_its_line_after_semicolons_that_split_nothing(state_dir,
+                                                                                  tmp_path):
+    text = (FIXTURES / "statements" / "001_statements.sql").read_text()
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    (migrations / "001_statements.sql").write_text(text + "create extension postgis;\n")
+    code, out, err = run_rlsentry("attack", "--migrations", str(migrations), state_dir=state_dir)
+    assert code == 2, out
+    assert f"failed at line {text.count(chr(10)) + 1}: " in err and 'extension "postgis"' in err

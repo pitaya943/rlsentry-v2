@@ -1,181 +1,270 @@
+# T-03 fix round 1: python3 docs/tasks/anon-probe/evidence/T-03-mutants/mutants.py, full run on d0f3fe7, one mutant at a time.
 M01 auth.uid() ignores the claims
-     2 failed, 47 passed in 35.36s
+     2 failed, 55 passed in 42.46s
        tests/test_migrations.py::test_auth_functions_read_request_jwt_claims_like_supabase
        tests/test_writes.py::test_auth_uid_is_the_jwt_subject_and_null_for_anon[{"role":
 M02 auth.role() constant 'anon'
-     1 failed, 48 passed in 35.07s
+     1 failed, 56 passed in 42.16s
        tests/test_migrations.py::test_auth_functions_read_request_jwt_claims_like_supabase
 M03 auth.jwt() returns {}
-     2 failed, 47 passed in 33.66s
+     2 failed, 55 passed in 43.91s
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_auth_functions_read_request_jwt_claims_like_supabase
 M04 no usage on schema auth for anon
-     2 failed, 47 passed in 34.29s
+     2 failed, 55 passed in 43.97s
        tests/test_writes.py::test_auth_uid_is_the_jwt_subject_and_null_for_anon[{"role":
        tests/test_writes.py::test_auth_uid_is_the_jwt_subject_and_null_for_anon[{"role":
 M05 no auth.users table
-     3 failed, 46 passed in 34.68s
+     5 failed, 52 passed in 44.35s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
 M06 no uuid-ossp
-     3 failed, 46 passed in 35.47s
+     5 failed, 52 passed in 43.34s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
 M07 no pgcrypto
-     3 failed, 46 passed in 35.40s
+     5 failed, 52 passed in 46.32s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M08 extensions not on the database search path
-     3 failed, 46 passed in 34.52s
+M08 pgcrypto in public, not in extensions
+     1 failed, 56 passed in 46.84s
+       tests/test_migrations.py::test_extension_functions_called_with_their_schema
+M09 uuid-ossp in public, not in extensions
+     1 failed, 56 passed in 45.72s
+       tests/test_migrations.py::test_extension_functions_called_with_their_schema
+M10 extensions not on the server's search path (seeding, migrations)
+     4 failed, 53 passed in 44.66s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M09 all migrations in one transaction
-     37 failed, 9 passed, 3 errors in 264.19s (0:04:24)
-       tests/test_guard.py::test_anon_channel_needs_a_running_sandbox
-       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
-       tests/test_guard.py::test_both_sandbox_servers_listen_on_loopback_only
-M10 no transaction per migration
-     2 failed, 47 passed in 37.61s
+M11 extensions not on PostgREST's search path
+     1 failed, 56 passed in 45.08s
+       tests/test_migrations.py::test_extensions_on_the_search_path_of_seeding_and_postgrest
+M12 no usage on schema extensions for anon
+     1 failed, 56 passed in 48.13s
+       tests/test_migrations.py::test_extensions_on_the_search_path_of_seeding_and_postgrest
+M13 auth.users has no email
+     1 failed, 56 passed in 49.36s
+       tests/test_migrations.py::test_starter_trigger_reads_the_auth_users_columns_supabase_has
+M14 auth.users has no raw_user_meta_data
+     2 failed, 55 passed in 47.82s
+       tests/test_migrations.py::test_starter_trigger_reads_the_auth_users_columns_supabase_has
+       tests/test_migrations.py::test_check_violated_in_another_table_stops_the_run_cleanly
+M15 auth.users has no last_sign_in_at
+     1 failed, 56 passed in 45.67s
+       tests/test_migrations.py::test_starter_trigger_reads_the_auth_users_columns_supabase_has
+M16 auth.users has no confirmed_at
+     1 failed, 56 passed in 45.79s
+       tests/test_migrations.py::test_starter_trigger_reads_the_auth_users_columns_supabase_has
+M17 all migrations in one transaction
+     5 failed, 52 passed in 43.37s
+       tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
+       tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
+       tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
+M18 no transaction per migration
+     2 failed, 55 passed in 44.60s
        tests/test_migrations.py::test_auth_functions_read_request_jwt_claims_like_supabase
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[enum_same_file-002_use.sql-named2]
-M11 error does not name the file
-     4 failed, 45 passed in 35.53s
+M19 error does not name the file
+     6 failed, 51 passed in 45.70s
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[broken-002_broken.sql-named0]
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[no_extension-001_postgis.sql-named1]
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[enum_same_file-002_use.sql-named2]
-M12 error does not name the line
-     3 failed, 46 passed in 37.04s
+M20 error does not name the line
+     5 failed, 52 passed in 43.92s
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[broken-002_broken.sql-named0]
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[no_extension-001_postgis.sql-named1]
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[enum_same_file-002_use.sql-named2]
-M13 error does not name the missing object
-     4 failed, 45 passed in 38.71s
+M21 error does not name the missing object
+     4 failed, 53 passed in 42.05s
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[broken-002_broken.sql-named0]
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[no_extension-001_postgis.sql-named1]
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[enum_same_file-002_use.sql-named2]
-M14 no teardown when the build fails
-     7 failed, 42 passed in 37.45s
+M22 error line is the statement's, not the error's
+     SURVIVED: 57 passed in 43.15s
+M23 split: dollar quoting ignored
+     1 failed, 56 passed in 42.49s
+       tests/test_migrations.py::test_auth_functions_read_request_jwt_claims_like_supabase
+M24 split: quoted strings ignored
+     SURVIVED: 57 passed in 41.20s
+M25 split: E'' backslash escapes ignored
+     SURVIVED: 57 passed in 41.46s
+M26 split: -- comments not skipped
+     6 failed, 51 passed in 42.40s
+       tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
+       tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
+       tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
+M27 split: block comments not nested
+     1 failed, 56 passed in 44.48s
+       tests/test_migrations.py::test_migration_split_where_postgres_splits_it
+M28 split: BEGIN ATOMIC bodies not tracked
+     1 failed, 56 passed in 42.61s
+       tests/test_migrations.py::test_migration_split_where_postgres_splits_it
+M29 split: parentheses ignored
+     SURVIVED: 57 passed in 44.32s
+M30 unexpected exception exits 1 (no catch-all)
+     1 failed, 56 passed in 42.96s
+       tests/test_unexpected.py::test_unexpected_error_after_the_build_tears_down_and_exits_2
+M31 another table's CHECK looked up in this one
+     1 failed, 56 passed in 42.35s
+       tests/test_migrations.py::test_check_violated_in_another_table_stops_the_run_cleanly
+M32 no teardown when the build fails
+     8 failed, 49 passed in 44.34s
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[broken-002_broken.sql-named0]
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[no_extension-001_postgis.sql-named1]
        tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[enum_same_file-002_use.sql-named2]
-M15 no stop for an unseeded table
-     3 failed, 46 passed in 38.60s
+M33 no stop for an unseeded table
+     4 failed, 53 passed in 44.11s
        tests/test_migrations.py::test_table_left_without_rows_stops_the_run[unseedable_point-named0]
        tests/test_migrations.py::test_table_left_without_rows_stops_the_run[unseedable_empty_enum-named1]
        tests/test_migrations.py::test_table_left_without_rows_stops_the_run[unseedable_check-named2]
-M16 unseeded stop does not name the reason
-     3 failed, 46 passed in 35.91s
+M34 unseeded stop does not name the reason
+     4 failed, 53 passed in 41.52s
        tests/test_migrations.py::test_table_left_without_rows_stops_the_run[unseedable_point-named0]
        tests/test_migrations.py::test_table_left_without_rows_stops_the_run[unseedable_empty_enum-named1]
        tests/test_migrations.py::test_table_left_without_rows_stops_the_run[unseedable_check-named2]
-M17 seed in name order, not FK order
-     4 failed, 45 passed in 35.35s
+M35 seed in name order, not FK order
+     4 failed, 53 passed in 41.75s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M18 seed auth.users and referenced tables last
-     3 failed, 46 passed in 36.26s
+M36 seed auth.users and referenced tables last
+     5 failed, 52 passed in 41.59s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M19 referenced tables not seeded
-     3 failed, 46 passed in 34.90s
+M37 referenced tables not seeded
+     5 failed, 52 passed in 39.64s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M20 cycle broken by name, not by the nullable key
-     4 failed, 45 passed in 35.56s
+M38 cycle broken by name, not by the nullable key
+     4 failed, 53 passed in 39.47s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M21 FK values random, not from the parent
-     4 failed, 45 passed in 35.78s
+M39 FK values random, not from the parent
+     5 failed, 52 passed in 40.21s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M22 FK column with a default left to the default
-     3 failed, 46 passed in 36.37s
+M40 FK column with a default left to the default
+     3 failed, 54 passed in 42.67s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M23 empty-parent reason not named
-     1 failed, 48 passed in 35.06s
+M41 empty-parent reason not named
+     1 failed, 56 passed in 44.30s
        tests/test_migrations.py::test_table_left_without_rows_stops_the_run[unseedable_point-named0]
-M24 enums not generated
-     3 failed, 46 passed in 35.13s
+M42 enums not generated
+     3 failed, 54 passed in 42.08s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M25 arrays not generated
-     4 failed, 45 passed in 35.42s
+M43 arrays not generated
+     4 failed, 53 passed in 42.19s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M26 array elements not escaped
-     1 failed, 48 passed in 35.31s
+M44 array elements not escaped
+     1 failed, 56 passed in 43.91s
        tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
-M27 varchar length not honoured
-     1 failed, 48 passed in 34.89s
+M45 varchar length not honoured
+     1 failed, 56 passed in 44.23s
        tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
-M28 nullable unsupported column blocks the table
-     4 failed, 45 passed in 35.40s
+M46 nullable unsupported column blocks the table
+     4 failed, 53 passed in 44.67s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M29 no CHECK retries
-     5 failed, 44 passed in 35.38s
+M47 no CHECK retries
+     4 failed, 53 passed in 42.60s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M30 CHECK retries stop at the first CHECK
-     4 failed, 45 passed in 34.28s
+M48 CHECK retries stop at the first CHECK
+     4 failed, 53 passed in 43.63s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M31 CHECK number +1 not tried
-     3 failed, 46 passed in 34.45s
+M49 CHECK number +1 not tried
+     3 failed, 54 passed in 46.80s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M32 CHECK number -1 not tried
-     3 failed, 46 passed in 34.10s
+M50 CHECK number -1 not tried
+     3 failed, 54 passed in 48.68s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M33 CHECK decimals not parsed
-     3 failed, 46 passed in 34.45s
+M51 CHECK decimals not parsed
+     3 failed, 54 passed in 45.02s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M34 CHECK string constants not unescaped
-     1 failed, 48 passed in 33.13s
+M52 CHECK string constants not unescaped
+     1 failed, 56 passed in 44.88s
        tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
-M35 CHECK string constants not tried
-     4 failed, 45 passed in 34.92s
+M53 CHECK string constants not tried
+     4 failed, 53 passed in 44.78s
        tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
        tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
        tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
-M36 emptiness from rows inserted, not rows present
-     1 failed, 48 passed in 36.23s
+M54 emptiness from rows inserted, not rows present
+     2 failed, 55 passed in 45.45s
        tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
-M37 partial seeding not noted
-     1 failed, 48 passed in 35.31s
+       tests/test_migrations.py::test_starter_trigger_reads_the_auth_users_columns_supabase_has
+M55 partial seeding not noted
+     1 failed, 56 passed in 45.17s
        tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
-M38 identifiers in f-strings
-     1 failed, 48 passed in 35.70s
+M56 identifiers in f-strings
+     1 failed, 56 passed in 45.95s
        tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
-M39 column identifiers in f-strings
-     1 failed, 48 passed in 36.72s
+M57 column identifiers in f-strings
+     1 failed, 56 passed in 45.68s
        tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
-M40 insert attack's row ignores CHECKs
-     1 failed, 48 passed in 36.53s
+M58 insert attack's row ignores CHECKs
+     1 failed, 56 passed in 49.33s
        tests/test_migrations.py::test_identifiers_quoted_and_partly_seedable_tables_noted
-M41 fake_row from column types only (no enum/FK/array)
-     11 failed, 33 passed, 5 errors in 34.02s
+M59 fake_row from column types only (no enum/FK/array)
+     11 failed, 41 passed, 5 errors in 47.27s
        tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
        tests/test_lab.py::test_lab_verdicts_match_expected
        tests/test_lab.py::test_exposed_read_shows_count_and_a_seeded_row[lab_rls_off]
+
+# Survivors M22, M24, M25, M29: tests added (broken_multiline case; statements fixture extended;
+# test_failing_statement_named_by_its_line_after_semicolons_that_split_nothing), M24 pattern corrected. Re-run:
+M22 error line is the statement's, not the error's
+     1 failed, 57 passed in 51.29s
+       tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[broken_multiline-001_files.sql-named2]
+M24 split: quoted strings ignored
+M23 split: dollar quoting ignored
+     1 failed, 58 passed in 46.62s
+       tests/test_migrations.py::test_auth_functions_read_request_jwt_claims_like_supabase
+M24 split: quoted strings ignored
+     2 failed, 57 passed in 45.06s
+       tests/test_migrations.py::test_migration_split_where_postgres_splits_it
+       tests/test_migrations.py::test_failing_statement_named_by_its_line_after_semicolons_that_split_nothing
+M25 split: E'' backslash escapes ignored
+     1 failed, 58 passed in 46.19s
+       tests/test_migrations.py::test_failing_statement_named_by_its_line_after_semicolons_that_split_nothing
+M26 split: -- comments not skipped
+     7 failed, 52 passed in 46.58s
+       tests/test_migrations.py::test_supabase_app_builds_and_every_table_is_seeded_in_full
+       tests/test_migrations.py::test_policies_see_anon_through_auth_role_jwt_and_uid
+       tests/test_migrations.py::test_seeded_row_honours_enum_check_and_auth_users_key
+M27 split: block comments not nested
+     2 failed, 57 passed in 48.45s
+       tests/test_migrations.py::test_migration_split_where_postgres_splits_it
+       tests/test_migrations.py::test_failing_statement_named_by_its_line_after_semicolons_that_split_nothing
+M28 split: BEGIN ATOMIC bodies not tracked
+     2 failed, 57 passed in 48.83s
+       tests/test_migrations.py::test_migration_split_where_postgres_splits_it
+       tests/test_migrations.py::test_failing_statement_named_by_its_line_after_semicolons_that_split_nothing
+M29 split: parentheses ignored
+     2 failed, 57 passed in 46.72s
+       tests/test_migrations.py::test_migration_split_where_postgres_splits_it
+       tests/test_migrations.py::test_failing_statement_named_by_its_line_after_semicolons_that_split_nothing

@@ -1,5 +1,5 @@
 $ rlsentry attack --lab
-rlsentry 0.1.0 attack on lab (2026-11-23T16:24:02+00:00)
+rlsentry 0.1.0 attack on lab (2026-11-23T18:01:52+00:00)
 
 public.lab_delete_open
   READ: protected - anon read 0 rows
@@ -56,8 +56,8 @@ public.lab_using_true
 [exit 1, expected 1]
 
 [--json exit 1]
-$ rlsentry attack --migrations /tmp/tmp.9fauNbCzNV/clean
-rlsentry 0.1.0 attack on /tmp/tmp.9fauNbCzNV/clean (2026-11-23T16:24:05+00:00)
+$ rlsentry attack --migrations /tmp/tmp.ghLfrLV5ul/clean
+rlsentry 0.1.0 attack on /tmp/tmp.ghLfrLV5ul/clean (2026-11-23T18:01:56+00:00)
 
 public.profiles
   READ: protected - anon read 0 rows
@@ -70,7 +70,7 @@ public.profiles
 [exit 0, expected 0]
 
 $ rlsentry attack --migrations /home/user/rlsentry-v2/.shilaycow/worktrees/T-03/tests/fixtures/supabase_app
-rlsentry 0.1.0 attack on /home/user/rlsentry-v2/.shilaycow/worktrees/T-03/tests/fixtures/supabase_app (2026-11-23T16:24:06+00:00)
+rlsentry 0.1.0 attack on /home/user/rlsentry-v2/.shilaycow/worktrees/T-03/tests/fixtures/supabase_app (2026-11-23T18:01:58+00:00)
 
 public.announcements
   READ: EXPOSED - anon read 5 row(s)
@@ -87,7 +87,7 @@ public.attachments
   note: seeded 5 rows
 public.profiles
   READ: EXPOSED - anon read 5 row(s)
-    evidence: {"rows_read": 5, "row": {"id": "0454fc33-2c4a-4fc3-88dd-c7b9fc0aa860", "username": "username-1", "role": "member", "tier": "free", "tags": ["tags-1"], "updated_at": "2026-11-23T16:24:07.455336+00:00", "favourite_todo": null}}
+    evidence: {"rows_read": 5, "row": {"id": "6afe7776-f948-4435-9a98-8e3703b802e3", "username": "username-1", "role": "member", "tier": "free", "tags": ["tags-1"], "updated_at": "2026-11-23T18:01:59.400162+00:00", "favourite_todo": null}}
   INSERT: protected - HTTP 401 42501: new row violates row-level security policy for table "profiles"
   UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204; PATCH without a filter: HTTP 204)
   DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204; DELETE without a filter: HTTP 204)
@@ -123,8 +123,6 @@ public.workspaces
 
 $ rlsentry attack --migrations /home/user/rlsentry-v2/.shilaycow/worktrees/T-03/tests/fixtures/broken
 rlsentry: could not build or attack the copy: migration 002_broken.sql failed at line 2: relation "storage.buckets" does not exist
-LINE 1: select * from storage.buckets;
-                      ^
 [exit 2, expected 2]
 
 $ rlsentry attack --migrations /home/user/rlsentry-v2/.shilaycow/worktrees/T-03/tests/fixtures/unseedable_point
