@@ -46,10 +46,9 @@ def _fk_order(conn, tables):
         join pg_class r on r.oid = k.confrelid join pg_namespace rn on rn.oid = r.relnamespace
         where k.contype = 'f'
     """):
-        if (cs, ct) != (rs, rt):  # a self-reference cannot be ordered; it gets null or nothing
-            parents.setdefault((cs, ct), set()).add((rs, rt))
-            if notnull:
-                required.setdefault((cs, ct), set()).add((rs, rt))
+        parents.setdefault((cs, ct), set()).add((rs, rt))
+        if notnull:
+            required.setdefault((cs, ct), set()).add((rs, rt))
     wanted, todo = set(), list(tables)
     while todo:
         t = todo.pop()
@@ -59,8 +58,8 @@ def _fk_order(conn, tables):
     order: list = []
     while len(order) < len(wanted):
         left, done = wanted - set(order), set(order)
-        # Parents first. In a cycle, a nullable key is left null to break it; a cycle of
-        # NOT NULL keys cannot be seeded, and the constraints will say so.
+        # Parents first. In a cycle (a self-reference too), a nullable key is left null to
+        # break it; a cycle of NOT NULL keys cannot be seeded, and the constraints say so.
         order += (sorted(t for t in left if parents.get(t, set()) <= done)
                   or sorted(t for t in left if required.get(t, set()) <= done)
                   or sorted(left))
@@ -133,8 +132,7 @@ def _generator(conn, column: str, typ: str, typoid: int, elemoid: int) -> Genera
     if base in _NUMERIC:
         return lambda i: f"{i + 1}.5"
     if base in _TEXT:
-        length = int(typ.split("(")[1].split(")")[0]) if "(" in typ else None
-        return lambda i: f"{column}-{i + 1}"[:length]
+        return lambda i: f"{column}-{i + 1}"  # the ::varchar(n) cast truncates
     if base == "boolean":
         return lambda i: "true" if i % 2 == 0 else "false"
     if base == "uuid":

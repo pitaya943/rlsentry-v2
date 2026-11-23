@@ -33,6 +33,11 @@ alter table profiles enable row level security;
 SQL
 step 0 rlsentry attack --migrations "$work/clean"
 
+fixtures="$(cd "$(dirname "$0")/../../../tests/fixtures" && pwd)"
+step 1 rlsentry attack --migrations "$fixtures/supabase_app"
+step 2 rlsentry attack --migrations "$fixtures/broken"
+step 2 rlsentry attack --migrations "$fixtures/unseedable_point"
+
 step 2 rlsentry attack --target https://x.supabase.co
 
 mkdir "$work/slow"

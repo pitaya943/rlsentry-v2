@@ -1,8 +1,6 @@
-create extension if not exists "uuid-ossp" with schema extensions;
-create extension if not exists pgcrypto with schema extensions;
-
+-- uuid-ossp and pgcrypto come installed in schema extensions, on the search path.
 create table public.todos (
-  id uuid default extensions.uuid_generate_v4() primary key,
+  id uuid default uuid_generate_v4() primary key,
   user_id uuid not null default auth.uid() references public.profiles,
   task text check (char_length(task) > 3),
   priority int not null check (priority between 1 and 3),

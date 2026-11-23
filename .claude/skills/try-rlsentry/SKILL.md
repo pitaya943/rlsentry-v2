@@ -21,6 +21,9 @@ in order, and fails on the first step that does not give the expected exit code:
 |---|---|---|
 | attack the lab | `rlsentry attack --lab` (and `--json`) | exit 1, EXPOSED reads with evidence |
 | attack a clean migrations folder | `rlsentry attack --migrations <dir>` | exit 0 |
+| attack a Supabase-style app | `rlsentry attack --migrations tests/fixtures/supabase_app` | exit 1, every table "seeded 5 rows" |
+| a migration needing `storage` | `rlsentry attack --migrations tests/fixtures/broken` | exit 2 naming the file, line and `storage.buckets` |
+| a table the generator cannot fill | `rlsentry attack --migrations tests/fixtures/unseedable_point` | exit 2 naming the table and column, no report |
 | point it at a live project | `rlsentry attack --target https://x.supabase.co` | exit 2, refused, nothing sent |
 | press Ctrl-C mid-run | SIGINT while the attack waits on a slow policy | exit 2, no process or run dir left |
 

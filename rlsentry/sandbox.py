@@ -47,15 +47,14 @@ create table rlsentry_run.nonce (value text not null);
 
 -- Extensions where Supabase puts them, on the search path as there.
 create schema extensions;
-grant usage on schema extensions to anon, authenticated, service_role;
 create extension pgcrypto with schema extensions;
 create extension "uuid-ossp" with schema extensions;
 alter database postgres set search_path = "$user", public, extensions;
 
 -- The auth stand-in: the parts of Supabase's auth schema that migrations and policies use.
 -- The functions read the claims PostgREST sets for each request, as Supabase's do.
+-- No USAGE grants for anon: a policy stores resolved objects, so it runs without them.
 create schema auth;
-grant usage on schema auth to anon, authenticated, service_role;
 create table auth.users (
   id uuid primary key default gen_random_uuid(),
   aud varchar(255) default 'authenticated',
@@ -209,7 +208,6 @@ class Sandbox:
         conf.write_text(
             f'db-uri = "postgres://authenticator@127.0.0.1:{pg_port}/postgres"\n'
             'db-schemas = "public"\n'
-            'db-extra-search-path = "public, extensions"\n'
             'db-anon-role = "anon"\n'
             f'jwt-secret = "{self._jwt_secret}"\n'
             'server-host = "127.0.0.1"\n'
