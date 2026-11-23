@@ -103,3 +103,11 @@ M22 docker run not atomic w.r.t. signals
        tests/test_docker.py::test_signal_while_docker_run_is_in_flight_leaves_no_container
 
 # M12 survives as an equivalent mutant: the run's container names are fixed before docker run, so removing by name and by the run label reach the same containers.
+
+# After the seam takes the superuser's name (orchestrator heads-up on T-04's supabase_admin), M23-M24 run alone on the working tree after 3bf5b1b:
+M23 docker cluster ignores the sandbox's superuser
+     1 failed, 83 passed, 1 skipped in 117.54s (0:01:57)
+       tests/test_docker.py::test_each_backend_creates_the_cluster_with_the_superuser_the_sandbox_names[docker]
+M24 local cluster ignores the sandbox's superuser
+     1 failed, 83 passed, 1 skipped in 120.16s (0:02:00)
+       tests/test_docker.py::test_each_backend_creates_the_cluster_with_the_superuser_the_sandbox_names[local]

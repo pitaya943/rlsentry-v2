@@ -247,6 +247,32 @@ def test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers(fake_docke
     assert set(fake_docker.containers()) == {"unlabelled", "other-host"}
 
 
+@pytest.mark.parametrize("backend", ["local", "docker"])
+def test_each_backend_creates_the_cluster_with_the_superuser_the_sandbox_names(fake_docker, tmp_path,
+                                                                               monkeypatch, backend):
+    import psycopg
+    from rlsentry.backends import select
+
+    monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
+    b = select(backend, "superuser-test")
+    try:
+        port = b.start_db("rlsentry_admin", {})
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                conn = psycopg.connect(host="127.0.0.1", port=port, user="rlsentry_admin",
+                                       dbname="postgres", connect_timeout=2)
+                break
+            except psycopg.OperationalError:
+                assert b.alive() and time.monotonic() < deadline, b.log_tail("db")
+                time.sleep(0.1)
+        with conn:
+            assert conn.execute("select rolsuper from pg_roles where rolname = current_user").fetchone() == (True,)
+    finally:
+        b.stop()
+    assert fake_docker.containers() == {}
+
+
 # design §2 on this backend: the nonce check and the running state still guard the channel.
 
 @pytest.fixture

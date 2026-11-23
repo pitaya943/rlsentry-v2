@@ -89,6 +89,7 @@ $$;
 # Supabase's search path, for every connection: the server's default covers this process's
 # connections and the migrations'; PostgREST sets its own per request (db-extra-search-path).
 SEARCH_PATH = '"$user", public, extensions'
+SUPERUSER = "postgres"  # the cluster's superuser: every backend creates the cluster with it
 
 
 class Interrupted(BaseException):
@@ -166,8 +167,8 @@ class Sandbox:
     # build (design §3)
 
     def _build(self) -> None:
-        pg_port = self._backend.start_db({"search_path": SEARCH_PATH, "fsync": "off",
-                                          "synchronous_commit": "off", "full_page_writes": "off"})
+        pg_port = self._backend.start_db(SUPERUSER, {"search_path": SEARCH_PATH, "fsync": "off",
+                                                     "synchronous_commit": "off", "full_page_writes": "off"})
         self._conn = _connect(pg_port, self._backend)
         self._conn.execute(_SETUP_SQL)
         self._apply_migrations(pg_port)
@@ -349,7 +350,7 @@ def _connect(port: int, backend: Backend) -> psycopg.Connection:
         if not backend.alive():
             raise BuildError(f"postgres exited: {backend.log_tail('db')}")
         try:
-            return psycopg.connect(host="127.0.0.1", port=port, user="postgres", dbname="postgres",
+            return psycopg.connect(host="127.0.0.1", port=port, user=SUPERUSER, dbname="postgres",
                                    autocommit=True, connect_timeout=2)
         except psycopg.OperationalError:
             if time.monotonic() > deadline:

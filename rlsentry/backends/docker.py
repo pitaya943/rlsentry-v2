@@ -58,13 +58,13 @@ class DockerBackend:
         if stale:
             _docker("rm", "-f", "-v", *stale)
 
-    def start_db(self, settings: dict[str, str]) -> int:
+    def start_db(self, superuser: str, settings: dict[str, str]) -> int:
         # PostgREST will live in this container's network namespace: its port is published here.
         self._ports = {"db": free_port(), "rest": free_port()}
         self._run(self._db, [
             "-p", f"127.0.0.1:{self._ports['db']}:5432",
             "-p", f"127.0.0.1:{self._ports['rest']}:3000",
-            "-e", "POSTGRES_HOST_AUTH_METHOD=trust",
+            "-e", f"POSTGRES_USER={superuser}", "-e", "POSTGRES_HOST_AUTH_METHOD=trust",
             DB_IMAGE, *(arg for k, v in settings.items() for arg in ("-c", f"{k}={v}")),
         ], {})
         return self._ports["db"]

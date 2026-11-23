@@ -34,9 +34,9 @@ class Backend(Protocol):
     def sweep(self) -> None:
         """Destroy what earlier runs of this backend, whose rlsentry process is gone, left."""
 
-    def start_db(self, settings: dict[str, str]) -> int:
-        """Start PostgreSQL (superuser `postgres`, trust) with these server settings on
-        127.0.0.1; return its port."""
+    def start_db(self, superuser: str, settings: dict[str, str]) -> int:
+        """Start PostgreSQL with a new cluster whose superuser is `superuser` (trust
+        authentication) and these server settings, on 127.0.0.1; return its port."""
 
     def start_rest(self, db_user: str, settings: dict[str, str]) -> int:
         """Start PostgREST as `db_user` with these settings on 127.0.0.1; return its port."""

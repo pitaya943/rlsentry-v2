@@ -159,7 +159,7 @@ def run(state, args):
             spawn(c, ["sh", "-c", "echo 'Error: Database is uninitialized and superuser password is not specified.'; exit 1"])
         else:
             data = Path(c["dir"]) / "data"
-            subprocess.run([f"{PG_BIN}/initdb", "-D", str(data), "-U", "postgres", "--auth=trust",
+            subprocess.run([f"{PG_BIN}/initdb", "-D", str(data), "-U", opts["env"].get("POSTGRES_USER", "postgres"), "--auth=trust",
                             "--no-sync", "--no-instructions"], check=True, capture_output=True,
                            cwd=c["dir"], **({} if user is None else dict(user=user.pw_uid, group=user.pw_gid)))
             pub = published(c, 5432)

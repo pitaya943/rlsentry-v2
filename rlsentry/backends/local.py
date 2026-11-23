@@ -63,7 +63,7 @@ class LocalBackend:
     def sweep(self) -> None:
         sweep_stale()
 
-    def start_db(self, settings: dict[str, str]) -> int:
+    def start_db(self, superuser: str, settings: dict[str, str]) -> int:
         with signals_blocked():
             base = "/tmp" if os.geteuid() == 0 else tempfile.gettempdir()
             self._run_dir = Path(tempfile.mkdtemp(prefix="rlsentry-run-", dir=base))
@@ -73,7 +73,7 @@ class LocalBackend:
 
         data = self._run_dir / "data"
         init = subprocess.run(
-            [self._bins["initdb"], "-D", str(data), "-U", "postgres", "--auth=trust", "-E", "UTF8",
+            [self._bins["initdb"], "-D", str(data), "-U", superuser, "--auth=trust", "-E", "UTF8",
              "--no-sync", "--no-instructions"],
             capture_output=True, text=True, **self._as_user(),
         )

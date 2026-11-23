@@ -46,6 +46,10 @@ MUTANTS = [
     ("docker run not atomic w.r.t. signals", DK,
      "        with signals_blocked():  # a signal now would leave `docker run` half done\n            run = _docker(",
      "        if True:\n            run = _docker("),
+    ("docker cluster ignores the sandbox's superuser", DK,
+     '"-e", f"POSTGRES_USER={superuser}", ', ""),
+    ("local cluster ignores the sandbox's superuser", "rlsentry/backends/local.py",
+     '"-U", superuser, "--auth=trust"', '"-U", "postgres", "--auth=trust"'),
 ]
 
 
