@@ -42,5 +42,9 @@ def main(argv: list[str] | None = None) -> int:
     except Interrupted as sig:
         print(f"rlsentry: interrupted ({sig}); the copy was torn down", file=sys.stderr)
         return 2
+    except Exception as err:  # exit 1 means "exposed"; a run that broke says nothing of the kind
+        print(f"rlsentry: the run failed unexpectedly ({type(err).__name__}: {err}); "
+              "the copy was torn down", file=sys.stderr)
+        return 2
     print(render_json(report) if args.json else render_text(report))
     return 1 if report.exposed else 0
