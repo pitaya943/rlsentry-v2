@@ -1,0 +1,6 @@
+# shilaycow harness settings. Every skill reads these.
+owner: pitaya943        # the only person who merges into main
+bot: bullet-bots        # the agent account (Write role, cannot approve its own PRs)
+mode: auto              # auto: /shilaycow-chief agrees a brief, /shilaycow-autopilot runs it
+test_command: ""        # TBD: no project chosen yet; set it in the first task's PR
+fix_rounds: 3           # how many fix attempts a ticket gets before it goes to the owner
