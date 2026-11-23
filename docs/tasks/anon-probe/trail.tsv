@@ -25,3 +25,6 @@ time	who	decision	why	evidence
 2026-11-23T14:19Z	owner	Downloaded PostgREST v12.2.3 (sha256 9f71269e...) and verified it serves local PostgreSQL 16 with JSON error codes	Owner approved the download; the local backend needs it	design.md §8
 2026-11-23T14:19Z	owner	Session moved to cloud environment rlsentry-v2; setup script added installing shilaycow v0.4.2 skills and pinned PostgREST	Owner chose that environment; unattended runs need PostgREST; not yet proven on a freshly built container	environment rlsentry-v2
 2026-11-23T14:20Z	autopilot	autopilot-start 0186693	Gate passed; identity bullet-bots; tracking issue #2	https://github.com/pitaya943/rlsentry-v2/issues/2
+2026-11-23T14:22Z	autopilot	Cut into 5 tickets: T-01 groundwork + read slice; T-02 writes, T-03 migrations/seed, T-05 docker in parallel; T-04 value search + full lab	Vertical slices around the lab test; parallel tickets touch different modules	docs/tasks/anon-probe/plan.md
+2026-11-23T14:22Z	autopilot	T-01, T-02, T-03, T-05 risk high; T-04 medium	Guard, teardown and sandbox data model are Critical areas or the data model	docs/tasks/anon-probe/tickets/
+2026-11-23T14:22Z	autopilot	Docker backend integration may stay unexercised in this environment; reported as a gap if so	No daemon and Docker Hub 429 here	tickets/T-05.md
