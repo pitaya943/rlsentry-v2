@@ -16,3 +16,4 @@ time	who	decision	why	evidence
 2026-11-23T14:05Z	chief	Lovable target is attacked by replaying its migrations locally, not live; it is its own task	Keeps one safe code path; generating it needs the owner's Lovable account, which unattended work cannot use	roadmap.md task 2
 2026-11-23T14:05Z	chief	Attack-mode reports show one evidence row per finding	All rows are fake by construction; demonstrated evidence is the point of the tool	brief.md Assumptions
 2026-11-23T14:05Z	chief	Kept slug anon-probe despite the mode change	Renaming means deleting a pushed branch; the brief says it is attack mode	brief.md header
+2026-11-23T14:10Z	owner	brief-approved 0186693721f7e18bed2189e0d892dfb2df378af5	Owner said the brief is right; evidence rows in reports and a self-written lab confirmed	chat 2026-11-23
