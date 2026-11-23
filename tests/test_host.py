@@ -1,6 +1,7 @@
 """Nothing a migration file says may reach the host: migration-authored SQL runs as a role
 shaped like hosted Supabase's `postgres` (not a superuser), never as the cluster superuser."""
 
+import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -104,9 +105,10 @@ def test_what_built_as_superuser_still_builds(state_dir, fixture):
     assert code in (0, 1), err
 
 
-def test_migrations_create_extensions_supabase_allows(state_dir, tmp_path):
+def test_migrations_do_what_supabase_lets_its_postgres_role_do(state_dir, tmp_path):
     # pgcrypto/uuid-ossp/pg_stat_statements come installed (as on Supabase); citext is a
-    # trusted extension a project's own role may create, with or without a schema.
+    # trusted extension the project's role may create, with or without a schema. The role
+    # creates roles, and bypasses RLS (seeding a table that forces RLS on its owner).
     code, out, err = run_rlsentry("attack", "--migrations", str(_migrations(tmp_path, """
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists "uuid-ossp" with schema extensions;
@@ -114,5 +116,30 @@ create extension if not exists pg_stat_statements with schema extensions;
 create extension citext;
 create extension if not exists hstore with schema extensions;
 create table c (id bigint generated always as identity primary key, e citext, h extensions.hstore);
+create role reporting nologin;
+grant select on c to reporting;
+alter table c enable row level security;
+alter table c force row level security;
+""")), "--json", state_dir=state_dir)
+    assert code == 1, err  # t has RLS off
+    assert {f["table"]: f["notes"] for f in json.loads(out)["findings"]} == {
+        "t": ["seeded 5 rows"], "c": ["seeded 5 rows"]}
+
+
+def test_trigger_fired_while_restoring_cannot_reach_the_host(state_dir, tmp_path, victim_dir):
+    # An ALWAYS trigger fires even with session_replication_role = replica, which restore() and
+    # the clearing before a retried write use.
+    code, out, err = run_rlsentry("attack", "--migrations", str(_migrations(tmp_path, f"""
+create function public.on_delete() returns trigger language plpgsql as $$
+begin
+  if current_user <> 'anon' then
+    copy (select 1) to program 'touch {victim_dir}/x';
+  end if;
+  return old;
+end $$;
+create trigger t_delete before delete on t for each row execute function public.on_delete();
+alter table t enable always trigger t_delete;
 """)), state_dir=state_dir)
-    assert code == 1, err
+    assert list(victim_dir.iterdir()) == []
+    assert code == 2, out
+    assert "external program" in err

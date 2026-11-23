@@ -86,15 +86,17 @@ class _Plan:
             sql.SQL(", ").join(sql.SQL("%s::" + self.generators[n][0]) for n in names))
 
 
-def _plan(conn, schema: str, table: str) -> _Plan:
+def _plan(conn, schema: str, table: str, defaults: bool = False) -> _Plan:
+    """With `defaults`, columns that have a default get a value too (an update sets them)."""
     rel = sql.Identifier(schema, table)
     oid = conn.execute("select %s::regclass::oid", (rel.as_string(conn),)).fetchone()[0]
     fk = _fk_generators(conn, oid)
     generators: dict[str, tuple[str, Generator]] = {}
     missing = []
-    for name, typ, notnull, has_default, typoid, elemoid in conn.execute("""
+    for name, typ, notnull, has_default, computed, typoid, elemoid in conn.execute("""
         select a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull,
                a.atthasdef or a.attgenerated <> '' or a.attidentity <> '',
+               a.attgenerated <> '' or a.attidentity <> '',
                a.atttypid, t.typelem
         from pg_attribute a join pg_type t on t.oid = a.atttypid
         where a.attrelid = %s and a.attnum > 0 and not a.attisdropped
@@ -102,7 +104,7 @@ def _plan(conn, schema: str, table: str) -> _Plan:
     """, (oid,)).fetchall():
         if name in fk:
             gen, parent = fk[name]
-        elif has_default:
+        elif computed or has_default and not defaults:
             continue
         else:
             gen, parent = _generator(conn, name, typ, typoid, elemoid), None
@@ -145,6 +147,12 @@ def fake_row(conn, schema: str, table: str, i: int = ROWS_PER_TABLE) -> dict | N
     with conn.transaction(force_rollback=True):
         accepted, _ = _insert(conn, plan, plan.row(i))
     return accepted or plan.row(i)
+
+
+def update_values(conn, schema: str, table: str) -> dict:
+    """A fresh value (row ROWS_PER_TABLE's) for every column a row can be given a value for:
+    all but generated and identity columns, those with a default included."""
+    return _plan(conn, schema, table, defaults=True).row(ROWS_PER_TABLE)
 
 
 def _generator(conn, column: str, typ: str, typoid: int, elemoid: int) -> Generator | None:

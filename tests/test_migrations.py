@@ -78,6 +78,31 @@ def test_identifiers_quoted_and_partly_seedable_tables_noted(state_dir):
     assert findings['q"uote']["results"]["INSERT"]["evidence"]["row"]["Mixed Case"] == "it's"
 
 
+
+def test_writes_stopped_by_a_constraint_after_the_policy_are_tried_again(state_dir):
+    # RLS is off on every edge_cases table, so every write must come out EXPOSED: a CHECK, a
+    # unique key or a foreign key that refused the first try is no protection.
+    code, out, err = run_rlsentry("attack", "--migrations", str(FIXTURES / "edge_cases"), "--json",
+                                  state_dir=state_dir)
+    assert code == 1, err
+    findings = _findings(out)
+    assert {t: {op: r["outcome"] for op, r in f["results"].items()}
+            for t, f in findings.items()} == {t: dict.fromkeys(
+                ["READ", "INSERT", "UPDATE", "DELETE"], "EXPOSED") for t in findings}
+    # No fake row satisfies settings' CHECK (id = 1) and pairs' (two values, both seeded):
+    # value search finds the CHECK's value, and the seeded row holding it makes room.
+    for table, row in [("settings", {"id": 1}), ("pairs", {"side": "left"})]:
+        insert = findings[table]["results"]["INSERT"]
+        assert insert["evidence"]["source"] == "check"
+        assert {k: insert["evidence"]["row"][k] for k in row} == row
+        assert "collided with" in insert["basis"]
+    # q"uote: fake row 6's "it's" (varchar(4)) equals every row's, so another column is set.
+    assert findings['q"uote']["results"]["UPDATE"]["evidence"]["after"]["lab\"el\\s"] \
+        == ['lab"el\\s-6']
+    # Rows of child " table reference q"uote: the delete is tried again without them.
+    assert "referencing it were removed first" in findings['q"uote']["results"]["DELETE"]["basis"]
+
+
 @pytest.mark.parametrize("fixture, file, named", [
     ("broken", "002_broken.sql", ["line 2", "storage.buckets", 'relation "storage.buckets" does not exist']),
     ("no_extension", "001_postgis.sql", ["line 2", 'extension "postgis"']),

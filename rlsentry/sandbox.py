@@ -30,7 +30,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from rlsentry.channel import AnonChannel, anon_jwt
-from rlsentry.seed import fake_row, seed
+from rlsentry.seed import fake_row, seed, update_values
 
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
@@ -47,7 +47,7 @@ grant usage on schema public to anon, authenticated, service_role;
 -- says can reach the host (COPY ... PROGRAM or a server file, untrusted extensions or
 -- languages, server-side large objects). The superuser (supabase_admin, as on Supabase) only
 -- sets the copy up, writes the nonce and checks what attacks did.
-create role postgres login createrole createdb bypassrls;
+create role postgres login createrole bypassrls;
 grant anon, authenticated, service_role to postgres;
 grant create, temporary on database postgres to postgres;
 grant all on schema public to postgres;
@@ -401,6 +401,119 @@ class Inspector:
         """A fresh fake row, different from every seeded one; None if one cannot be made."""
         return fake_row(self._app, "public", table)
 
+    def update_values(self, table: str) -> dict[str, str]:
+        """A fresh value for every column an update can set."""
+        return update_values(self._app, "public", table)
+
+    def unique_columns(self, table: str) -> set[str]:
+        """Columns in any unique index (the primary key's included)."""
+        return {r[0] for r in self._conn.execute(
+            "select a.attname from pg_index i join pg_attribute a"
+            " on a.attrelid = i.indrelid and a.attnum = any(i.indkey)"
+            " where i.indrelid = format('public.%%I', %s::text)::regclass and i.indisunique",
+            (table,))}
+
+    def would_change(self, table: str, column: str, value, row: dict | None) -> bool:
+        """Would setting `column` to `value` change `row` (by primary key), or any row if None?
+        An update that writes the value already there changes nothing a check could see."""
+        key = self.primary_key(table) if row is not None else []
+        where = sql.SQL(" and ").join(
+            sql.SQL("{} = %s::{}").format(sql.Identifier(k), sql.SQL(self._type(table, k)))
+            for k in key) if key else sql.SQL("true")
+        return self._app.execute(
+            sql.SQL("select coalesce(bool_or({} is distinct from %s::{}), false) from {} where {}")
+            .format(sql.Identifier(column), sql.SQL(self._type(table, column)),
+                    sql.Identifier("public", table), where),
+            [value] + [str(row[k]) for k in key]).fetchone()[0]
+
+    def value_sources(self, table: str) -> list[tuple[str, str, object]]:
+        """Value search's candidates (design §4) as (source, column, value), in this order:
+        constants that anon's INSERT policies and the CHECK constraints compare a column with,
+        enum labels, values in the seeded rows, and null. White-box on purpose (design D-3)."""
+        columns = {name: (typ, enum, notnull) for name, typ, enum, notnull in self._conn.execute(
+            "select a.attname, format_type(a.atttypid, a.atttypmod), t.typtype = 'e', a.attnotnull"
+            " from pg_attribute a join pg_type t on t.oid = a.atttypid"
+            " where a.attrelid = format('public.%%I', %s::text)::regclass and a.attnum > 0"
+            " and not a.attisdropped and a.attgenerated = '' and a.attidentity = ''"
+            " order by a.attnum", (table,))}
+        out = []
+        for (expr,) in self._conn.execute(
+                "select coalesce(with_check, qual) from pg_policies where schemaname = 'public'"
+                " and tablename = %s and cmd in ('INSERT', 'ALL')"
+                " and roles && array['anon', 'public']::name[] and permissive = 'PERMISSIVE'",
+                (table,)):
+            out += [("policy", c, v) for c, v in _constants(expr or "", columns)]
+        for (expr,) in self._conn.execute(
+                "select pg_get_constraintdef(oid) from pg_constraint where contype = 'c'"
+                " and conrelid = format('public.%%I', %s::text)::regclass", (table,)):
+            out += [("check", c, v) for c, v in _constants(expr, columns)]
+        for name, (typ, enum, _) in columns.items():
+            if enum:
+                out += [("enum", name, label) for (label,) in self._conn.execute(
+                    "select enumlabel from pg_enum where enumtypid = %s::regtype"
+                    " order by enumsortorder", (typ,))]
+        rows = self.rows(table)
+        for name in columns:
+            seen = []
+            for value in (json.loads(json.dumps(r[name], default=str)) for r in rows):
+                if value is not None and value not in seen:
+                    seen.append(value)
+            out += [("seeded", name, v) for v in seen]
+        out += [("null", name, None) for name, (_, _, notnull) in columns.items() if not notnull]
+        return out
+
+    def make_room(self, table: str, constraint: str, row: dict) -> bool:
+        """Remove the rows `row` collides with on unique `constraint`, so an insert anon's
+        policy accepted can land (restore() puts them back). False if nothing was removed."""
+        cols = [r[0] for r in self._conn.execute(
+            "select a.attname from pg_index i join pg_class c on c.oid = i.indexrelid"
+            " join pg_attribute a on a.attrelid = i.indrelid and a.attnum = any(i.indkey)"
+            " where i.indrelid = format('public.%%I', %s::text)::regclass and c.relname = %s",
+            (table, constraint))]
+        if not cols or any(row.get(c) is None for c in cols):
+            return False
+        where = sql.SQL(" and ").join(
+            sql.SQL("{} = %s::{}").format(sql.Identifier(c), sql.SQL(self._type(table, c)))
+            for c in cols)
+        with self._app.transaction():
+            self._app.execute("set local session_replication_role = replica")  # no cascades
+            cur = self._app.execute(sql.SQL("delete from {} where {}").format(
+                sql.Identifier("public", table), where), [_text(row[c]) for c in cols])
+            return cur.rowcount > 0
+
+    def detach_references(self, table: str) -> bool:
+        """Remove the rows of other public tables that reference `table` (and clear its own
+        references to itself), so a delete anon's policy allowed is not stopped by a foreign
+        key (restore() puts them back). False if there was nothing to remove."""
+        refs = self._conn.execute(
+            "select k.conrelid = k.confrelid, n.nspname, c.relname,"
+            " array(select attname from pg_attribute where attrelid = k.conrelid"
+            "       and attnum = any(k.conkey))"
+            " from pg_constraint k join pg_class c on c.oid = k.conrelid"
+            " join pg_namespace n on n.oid = c.relnamespace"
+            " where k.contype = 'f' and k.confrelid = format('public.%%I', %s::text)::regclass",
+            (table,)).fetchall()
+        changed = 0
+        with self._app.transaction():
+            self._app.execute("set local session_replication_role = replica")  # no cascades
+            for itself, schema, child, cols in refs:
+                rel = sql.Identifier(schema, child)
+                if itself:
+                    statement = sql.SQL("update {} set {}").format(rel, sql.SQL(", ").join(
+                        sql.SQL("{} = null").format(sql.Identifier(c)) for c in cols))
+                elif schema == "public":
+                    statement = sql.SQL("delete from {}").format(rel)
+                else:
+                    continue  # restore() covers public tables only
+                changed += self._app.execute(statement).rowcount
+        return changed > 0
+
+    def _type(self, table: str, column: str) -> str:
+        return self._conn.execute(
+            "select format_type(atttypid, atttypmod) from pg_attribute"
+            " where attrelid = format('public.%%I', %s::text)::regclass and attname = %s",
+            (table, column)).fetchone()[0]
+
 
 # helpers
 
@@ -461,6 +574,36 @@ def _statements(text: str) -> list[tuple[int, str]]:
     if start is not None:
         out.append((start, text[start:]))
     return out
+
+def _text(value) -> str:
+    return json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+
+
+_STRING = re.compile(r"'((?:[^']|'')*)'")
+_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])")
+_NUMERIC_TYPES = ("smallint", "integer", "bigint", "real", "double precision", "numeric")
+
+
+def _constants(expr: str, columns: dict) -> list[tuple[str, object]]:
+    """(column, constant) pairs from a deparsed expression: each constant goes with the
+    columns named in the same AND/OR term. Numbers n also give n+1 and n-1 (for < and >),
+    and only to numeric columns."""
+    out = []
+    for term in re.split(r"\b(?:AND|OR)\b", expr):
+        strings = [m.replace("''", "'") for m in _STRING.findall(term)]
+        numbers = []
+        for n in _NUMBER.findall(_STRING.sub("''", term)):
+            v = float(n) if "." in n else int(n)
+            numbers += [str(v), str(v + 1), str(v - 1)]
+        for name, (typ, _, _) in columns.items():
+            if not re.search(r'(?<![\w"])' + re.escape(name) + r'(?![\w"])|"'
+                             + re.escape(name.replace('"', '""')) + '"', term):
+                continue
+            out += [(name, v) for v in strings]
+            if typ.split("(")[0] in _NUMERIC_TYPES:
+                out += [(name, v) for v in numbers]
+    return out
+
 
 def _stored_columns(conn: psycopg.Connection, table: str) -> list[str]:
     return [r[0] for r in conn.execute(

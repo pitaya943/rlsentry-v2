@@ -16,5 +16,5 @@ end;
 create view public.semi_view as select public.semi_twice(plain) as n from public."semi;colon";
 comment on table public."semi;colon" is 'a table; with a semicolon';
 comment on column public."semi;colon".escaped is E'it\'s; escaped';
-create table public.semi_audit (id bigint generated always as identity primary key);
-create rule semi_rule as on update to public.semi_audit do also (notify semi_a; notify semi_b);
+-- On the view, not a table: PostgREST cannot write to a table with a DO ALSO rule.
+create rule semi_rule as on update to public.semi_view do instead (notify semi_a; notify semi_b);

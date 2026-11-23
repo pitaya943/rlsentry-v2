@@ -85,7 +85,10 @@ def render_text(report: RunReport) -> str:
     for f in report.findings:
         lines.append(f"{f.schema}.{f.table}")
         for r in f.results.values():
-            lines.append(f"  {r.op.value}: {r.outcome.value} - {r.basis}")
+            outcome = r.outcome.value
+            if r.op is Op.INSERT and r.outcome is Outcome.PROTECTED:
+                outcome += f" ({r.tries} row{'s' if r.tries != 1 else ''} tried)"
+            lines.append(f"  {r.op.value}: {outcome} - {r.basis}")
             if r.evidence is not None:
                 lines.append(f"    evidence: {json.dumps(r.evidence, default=str)}")
         for note in f.notes:
