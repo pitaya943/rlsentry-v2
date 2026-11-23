@@ -37,9 +37,9 @@ def _length(type_name: str) -> int | None:
     return None
 
 
-def seed_table(conn, schema: str, table: str) -> tuple[int, list[str]]:
-    """Insert up to ROWS_PER_TABLE fake rows. Returns (rows inserted, notes)."""
-    cols = conn.execute(
+def _writable_columns(conn, schema: str, table: str) -> list[tuple[str, str]]:
+    """Columns a row must supply: no default, not generated, not identity. (name, type)."""
+    return conn.execute(
         """
         select a.attname, format_type(a.atttypid, a.atttypmod)
         from pg_attribute a
@@ -51,6 +51,19 @@ def seed_table(conn, schema: str, table: str) -> tuple[int, list[str]]:
         """,
         (schema, table),
     ).fetchall()
+
+
+def fake_row(conn, schema: str, table: str, i: int = ROWS_PER_TABLE) -> dict[str, str] | None:
+    """Fake values (as text) for the writable columns of row number i; None if a type has none.
+
+    The default i is the row after the seeded ones, so it differs from every seeded row."""
+    values = {name: _value(typ, name, i) for name, typ in _writable_columns(conn, schema, table)}
+    return None if None in values.values() else values
+
+
+def seed_table(conn, schema: str, table: str) -> tuple[int, list[str]]:
+    """Insert up to ROWS_PER_TABLE fake rows. Returns (rows inserted, notes)."""
+    cols = _writable_columns(conn, schema, table)
     unsupported = [f"{name} ({typ})" for name, typ in cols if _value(typ, name, 0) is None]
     if unsupported:
         return 0, [f"not seeded: no fake value for column(s) {', '.join(unsupported)}"]

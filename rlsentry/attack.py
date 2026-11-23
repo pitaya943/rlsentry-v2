@@ -16,10 +16,22 @@ LAB = Path(__file__).parent / "lab"
 def run(migrations: Path, source: str) -> RunReport:
     """Raises BuildError / AttackError (exit 2) or Interrupted."""
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    findings = []
     with Sandbox(migrations) as sandbox:
-        attacker = Attacker(sandbox.anon_channel())
-        for table in sandbox.tables:
-            findings.append(TableFinding("public", table, {Op.READ: attacker.read(table)},
-                                         sandbox.notes.get(table, [])))
+        findings = attack(sandbox)
     return RunReport(source, findings, started_at, __version__)
+
+
+def attack(sandbox: Sandbox) -> list[TableFinding]:
+    """Every operation on every table, each write on the seeded state (restored after it)."""
+    attacker = Attacker(sandbox.anon_channel(), sandbox.inspector())
+    findings = []
+    for table in sandbox.tables:
+        results = {Op.READ: attacker.read(table)}
+        for op, attempt in ((Op.INSERT, attacker.insert), (Op.UPDATE, attacker.update),
+                            (Op.DELETE, attacker.delete)):
+            try:
+                results[op] = attempt(table)
+            finally:
+                sandbox.restore()
+        findings.append(TableFinding("public", table, results, sandbox.notes.get(table, [])))
+    return findings
