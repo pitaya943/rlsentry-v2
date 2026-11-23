@@ -115,3 +115,65 @@ def test_table_left_without_rows_stops_the_run(state_dir, fixture, named):
         assert word in err
     assert residue() == before
     assert list(state_dir.glob("*.json")) == []
+
+
+def test_extensions_on_the_search_path_of_seeding_and_postgrest(state_dir):
+    # The trigger calls gen_random_bytes() and uuid_generate_v4() without a schema: it runs
+    # when the copy is seeded and when anon inserts through PostgREST.
+    code, out, err = run_rlsentry("attack", "--migrations", str(FIXTURES / "ext_unqualified"),
+                                  "--json", state_dir=state_dir)
+    assert code == 1, err
+    invites = _findings(out)["invites"]
+    assert invites["notes"] == ["seeded 5 rows"]
+    assert invites["results"]["INSERT"]["outcome"] == "EXPOSED", invites["results"]["INSERT"]
+
+
+def test_extension_functions_called_with_their_schema(state_dir):
+    code, out, err = run_rlsentry("attack", "--migrations", str(FIXTURES / "ext_qualified"),
+                                  "--json", state_dir=state_dir)
+    assert code == 0, err
+    assert _findings(out)["api_keys"]["notes"] == ["seeded 5 rows"]
+
+
+def test_starter_trigger_reads_the_auth_users_columns_supabase_has(state_dir):
+    code, out, err = run_rlsentry("attack", "--migrations", str(FIXTURES / "starter_trigger"),
+                                  "--json", state_dir=state_dir)
+    assert code == 1, err  # profiles are readable by everyone
+    read = _findings(out)["profiles"]["results"]["READ"]
+    assert read["outcome"] == "EXPOSED"
+    assert read["evidence"]["rows_read"] == 5  # one per seeded user, made by the trigger
+    assert read["evidence"]["row"]["email"] is not None
+
+
+def test_check_violated_in_another_table_stops_the_run_cleanly(state_dir):
+    before = residue()
+    code, out, err = run_rlsentry("attack", "--migrations", str(FIXTURES / "trigger_check"),
+                                  state_dir=state_dir)
+    assert code == 2, err
+    assert "Traceback" not in err
+    assert "could not seed auth.users" in err and "profiles_username_check" in err
+    assert residue() == before
+    assert list(state_dir.glob("*.json")) == []
+
+
+@pytest.mark.parametrize("meta", ["\\! touch {victim}", "\\o {victim}"])
+def test_migration_meta_commands_never_reach_the_host(state_dir, tmp_path, meta):
+    victim = tmp_path / "victim"
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    (migrations / "001_meta.sql").write_text(
+        "create table t (id bigint generated always as identity primary key);\n"
+        + meta.format(victim=victim) + "\n"
+        "select 1;\n")
+    code, out, err = run_rlsentry("attack", "--migrations", str(migrations), state_dir=state_dir)
+    assert not victim.exists()
+    assert code == 2, out
+    assert "migration 001_meta.sql failed at line 2" in err
+
+
+def test_migration_split_where_postgres_splits_it(state_dir):
+    code, out, err = run_rlsentry("attack", "--migrations", str(FIXTURES / "statements"), "--json",
+                                  state_dir=state_dir)
+    assert code == 1, err  # RLS off
+    row = _findings(out)["semi;colon"]["results"]["READ"]["evidence"]["row"]
+    assert (row["plain"], row["escaped"]) == ("a;b", "it's; fine")

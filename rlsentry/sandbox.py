@@ -47,29 +47,41 @@ alter default privileges in schema public grant all on functions to anon, authen
 create schema rlsentry_run;
 create table rlsentry_run.nonce (value text not null);
 
--- Extensions where Supabase puts them, on the search path as there.
+-- Extensions where Supabase puts them (on the search path: SEARCH_PATH below).
 create schema extensions;
 create extension pgcrypto with schema extensions;
 create extension "uuid-ossp" with schema extensions;
-alter database postgres set search_path = "$user", public, extensions;
+grant usage on schema extensions to anon, authenticated, service_role;
 
 -- The auth stand-in: the parts of Supabase's auth schema that migrations and policies use.
 -- The functions read the claims PostgREST sets for each request, as Supabase's do.
 create schema auth;
 grant usage on schema auth to anon, authenticated, service_role;
+-- auth.users has the columns of Supabase's own that triggers on it read.
 create table auth.users (
+  instance_id uuid,
   id uuid primary key default gen_random_uuid(),
   aud varchar(255) default 'authenticated',
   role varchar(255) default 'authenticated',
   email varchar(255),
   encrypted_password varchar(255),
   email_confirmed_at timestamptz,
-  phone text,
+  invited_at timestamptz,
+  confirmation_sent_at timestamptz,
+  recovery_sent_at timestamptz,
+  last_sign_in_at timestamptz,
   raw_app_meta_data jsonb default '{}',
   raw_user_meta_data jsonb default '{}',
-  is_anonymous boolean not null default false,
+  is_super_admin boolean,
   created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  phone text default null,
+  phone_confirmed_at timestamptz,
+  confirmed_at timestamptz generated always as (least(email_confirmed_at, phone_confirmed_at)) stored,
+  banned_until timestamptz,
+  is_sso_user boolean not null default false,
+  deleted_at timestamptz,
+  is_anonymous boolean not null default false
 );
 create function auth.uid() returns uuid language sql stable as $$
   select (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')::uuid
@@ -81,6 +93,10 @@ create function auth.jwt() returns jsonb language sql stable as $$
   select nullif(current_setting('request.jwt.claims', true), '')::jsonb
 $$;
 """
+
+# Supabase's search path, for every connection: the server's default covers this process's
+# connections and the migrations'; PostgREST sets its own per request (db-extra-search-path).
+SEARCH_PATH = '"$user", public, extensions'
 
 
 class BuildError(Exception):
@@ -213,12 +229,13 @@ class Sandbox:
         pg = self._spawn(
             [bins["postgres"], "-D", str(data), "-p", str(pg_port),
              "-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories=",
+             "-c", f"search_path={SEARCH_PATH}",
              "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"],
             "postgres.log", signal.SIGINT,  # SIGINT = fast shutdown
         )
         self._conn = _connect(pg_port, pg, self._run_dir / "postgres.log")
         self._conn.execute(_SETUP_SQL)
-        self._apply_migrations(bins["psql"], pg_port)
+        self._apply_migrations(pg_port)
         self._seed()
         self._snapshot()
         self._conn.execute("insert into rlsentry_run.nonce values (%s)", (self._nonce,))
@@ -228,6 +245,7 @@ class Sandbox:
         conf.write_text(
             f'db-uri = "postgres://authenticator@127.0.0.1:{pg_port}/postgres"\n'
             'db-schemas = "public"\n'
+            'db-extra-search-path = "public, extensions"\n'
             'db-anon-role = "anon"\n'
             f'jwt-secret = "{self._jwt_secret}"\n'
             'server-host = "127.0.0.1"\n'
@@ -240,26 +258,30 @@ class Sandbox:
         _wait_http(self._rest_port, rest, self._run_dir / "postgrest.log")
         self._running = True
 
-    def _apply_migrations(self, psql: str, port: int) -> None:
-        """Each file in one transaction, as the Supabase CLI applies them. psql names the line
-        of the failing statement; the error names the missing object."""
+    def _apply_migrations(self, port: int) -> None:
+        """Each file in one transaction on a connection of its own, as the Supabase CLI applies
+        them: split into statements here, each sent to the server as it is. Nothing in a file
+        is run by a client, so a psql meta-command is a syntax error, as it is there."""
         files = sorted(self._migrations.glob("*.sql"))
         if not files:
             raise BuildError(f"no .sql migrations in {self._migrations}")
         for path in files:
-            with path.open("rb") as migration:
-                run = subprocess.run(
-                    [psql, "-X", "-q", "-h", "127.0.0.1", "-p", str(port), "-U", "postgres",
-                     "-d", "postgres", "-v", "ON_ERROR_STOP=1", "--single-transaction", "-f", "-"],
-                    stdin=migration, capture_output=True,
-                    env={"PATH": os.environ.get("PATH", ""), "LANG": "C.UTF-8"},
-                )
-            if run.returncode != 0:
-                # psql:<stdin>:<line>: ERROR:  <message>, then LINE/HINT context
-                err = run.stderr.decode(errors="replace").strip()
-                m = re.search(r"^psql:<stdin>:(\d+): ERROR:\s+(.*)", err, re.M | re.S)
-                where, detail = (f" at line {m[1]}", m[2]) if m else ("", err)
-                raise BuildError(f"migration {path.name} failed{where}: {detail}")
+            text = path.read_text()
+            with psycopg.connect(host="127.0.0.1", port=port, user="postgres", dbname="postgres",
+                                 autocommit=True) as conn:
+                start = 0
+                try:
+                    with conn.transaction():
+                        for start, statement in _statements(text):
+                            conn.execute(statement)
+                except psycopg.Error as err:
+                    pos = err.diag.statement_position
+                    at = start + int(pos) - 1 if pos else start
+                    detail = err.diag.message_primary or str(err).splitlines()[0]
+                    if err.diag.message_hint:
+                        detail += f" (hint: {err.diag.message_hint})"
+                    raise BuildError(f"migration {path.name} failed at line "
+                                     f"{text.count(chr(10), 0, at) + 1}: {detail}") from None
 
     def _seed(self) -> None:
         self.tables = [r[0] for r in self._conn.execute(
@@ -359,6 +381,64 @@ class Inspector:
 
 # helpers
 
+_TOKEN = re.compile(r"""
+    (?P<space>\s+)
+  | (?P<comment>--[^\n]*)
+  | (?P<block>/\*)
+  | (?P<string>[eE]'(?:[^'\\]|\\.|'')*(?:'|\Z)|'(?:[^']|'')*(?:'|\Z)|"(?:[^"]|"")*(?:"|\Z))
+  | (?P<dollar>\$(?:[^\W\d]\w*)?\$)
+  | (?P<word>[^\W\d]\w*(?:\$\w*)*)
+  | (?P<char>.)
+""", re.X | re.S)
+
+
+def _statements(text: str) -> list[tuple[int, str]]:
+    """Split a migration into statements, each with the offset it starts at. Semicolons end a
+    statement unless they are inside quotes, a dollar-quoted body, a comment, parentheses, or
+    the BEGIN ... END body of a CREATE FUNCTION/PROCEDURE (as psql and the Supabase CLI split)."""
+    out, start, pos, parens, depth, words = [], None, 0, 0, 0, []
+    while pos < len(text):
+        m = _TOKEN.match(text, pos)
+        kind, end = m.lastgroup, m.end()
+        if kind == "block":  # nested /* */
+            level = 1
+            while level and end < len(text):
+                nxt = min((i for i in (text.find("/*", end), text.find("*/", end)) if i >= 0),
+                          default=len(text))
+                level += 1 if text.startswith("/*", nxt) else -1
+                end = nxt + 2
+        elif kind == "dollar":
+            close = text.find(m[0], end)
+            end = len(text) if close < 0 else close + len(m[0])
+        if kind in ("space", "comment", "block"):
+            pos = end
+            continue
+        if start is None:
+            start = pos
+        if kind == "word":
+            word = m[0].lower()
+            words.append(word)
+            routine = (words[0] == "create" and len(words) > 1
+                       and (words[1] in ("function", "procedure")
+                            or words[1:3] == ["or", "replace"] and len(words) > 3
+                            and words[3] in ("function", "procedure")))
+            if routine and parens == 0:
+                if word == "begin" or (word == "case" and depth and words[-2] != "end"):
+                    depth += 1
+                elif word == "end" and depth:
+                    depth -= 1
+        elif m[0] == "(":
+            parens += 1
+        elif m[0] == ")":
+            parens = max(parens - 1, 0)
+        elif m[0] == ";" and parens == 0 and depth == 0:
+            out.append((start, text[start:end]))
+            start, words = None, []
+        pos = end
+    if start is not None:
+        out.append((start, text[start:]))
+    return out
+
 def _stored_columns(conn: psycopg.Connection, table: str) -> list[str]:
     return [r[0] for r in conn.execute(
         "select attname from pg_attribute where attrelid = format('public.%%I', %s::text)::regclass"
@@ -370,7 +450,7 @@ def _find_binaries() -> dict[str, str]:
     pg_dirs = sorted(glob.glob("/usr/lib/postgresql/*/bin"),
                      key=lambda d: int(Path(d).parent.name) if Path(d).parent.name.isdigit() else 0,
                      reverse=True)
-    for name in ("initdb", "postgres", "psql"):
+    for name in ("initdb", "postgres"):
         path = shutil.which(name) or next(
             (os.path.join(d, name) for d in pg_dirs if os.access(os.path.join(d, name), os.X_OK)), None)
         if path:

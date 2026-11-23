@@ -1,12 +1,13 @@
-"""Break each T-03 property one edit at a time; run the suite isolated; record which tests fail."""
+"""Break each T-03 property one edit at a time; run the suite isolated; record which tests fail.
+Run from anywhere in a checkout, as root: python3 docs/tasks/anon-probe/evidence/T-03-mutants/mutants.py [N ...]"""
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-WT = Path("/home/user/rlsentry-v2/.shilaycow/worktrees/T-03")
-ISO = "/tmp/claude-0/-home-user-rlsentry-v2/b9e11f1f-7126-5042-9467-51de14c64123/scratchpad/iso.sh"
-SB, SD = "rlsentry/sandbox.py", "rlsentry/seed.py"
+WT = Path(__file__).resolve().parents[5]  # the checkout this file is in
+ISO = str(Path(__file__).resolve().with_name("iso.sh"))
+SB, SD, CLI = "rlsentry/sandbox.py", "rlsentry/seed.py", "rlsentry/cli.py"
 
 MUTANTS = [
     ("auth.uid() ignores the claims", SB,
@@ -23,23 +24,49 @@ MUTANTS = [
     ("no auth.users table", SB, "create table auth.users (", "create table auth.users_gone ("),
     ("no uuid-ossp", SB, 'create extension "uuid-ossp" with schema extensions;', ""),
     ("no pgcrypto", SB, "create extension pgcrypto with schema extensions;", ""),
-    ("extensions not on the database search path", SB,
-     'alter database postgres set search_path = "$user", public, extensions;', ""),
+    ("pgcrypto in public, not in extensions", SB,
+     "create extension pgcrypto with schema extensions;", "create extension pgcrypto;"),
+    ("uuid-ossp in public, not in extensions", SB,
+     'create extension "uuid-ossp" with schema extensions;', 'create extension "uuid-ossp";'),
+    ("extensions not on the server's search path (seeding, migrations)", SB,
+     '             "-c", f"search_path={SEARCH_PATH}",\n', ""),
+    ("extensions not on PostgREST's search path", SB,
+     """            'db-extra-search-path = "public, extensions"\\n'\n""", ""),
+    ("no usage on schema extensions for anon", SB,
+     "grant usage on schema extensions to anon, authenticated, service_role;\n", ""),
+    ("auth.users has no email", SB, "  email varchar(255),\n", ""),
+    ("auth.users has no raw_user_meta_data", SB, "  raw_user_meta_data jsonb default '{}',\n", ""),
+    ("auth.users has no last_sign_in_at", SB, "  last_sign_in_at timestamptz,\n", ""),
+    ("auth.users has no confirmed_at", SB,
+     "  confirmed_at timestamptz generated always as (least(email_confirmed_at, phone_confirmed_at)) stored,\n", ""),
     ("all migrations in one transaction", SB,
-     """        for path in files:
-            with path.open("rb") as migration:""",
-     """        import io
-        whole = b"".join(p.read_bytes() + b"\\n" for p in files)
-        for path in files[-1:]:
-            with io.BytesIO(whole) as migration:"""),
-    ("no transaction per migration", SB, '"--single-transaction", ', ""),
+     "        for path in files:\n            text = path.read_text()\n",
+     "        for path in files[-1:]:\n            text = '\\n'.join(p.read_text() for p in files)\n"),
+    ("no transaction per migration", SB,
+     "                    with conn.transaction():\n                        for start, statement in _statements(text):\n                            conn.execute(statement)",
+     "                    for start, statement in _statements(text):\n                        conn.execute(statement)"),
     ("error does not name the file", SB,
-     'raise BuildError(f"migration {path.name} failed{where}: {detail}")',
-     'raise BuildError(f"a migration failed{where}: {detail}")'),
-    ("error does not name the line", SB, 'f" at line {m[1]}"', '""'),
+     'raise BuildError(f"migration {path.name} failed at line "',
+     'raise BuildError(f"a migration failed at line "'),
+    ("error does not name the line", SB,
+     'f"{text.count(chr(10), 0, at) + 1}: {detail}") from None', 'f"?: {detail}") from None'),
     ("error does not name the missing object", SB,
-     'raise BuildError(f"migration {path.name} failed{where}: {detail}")',
-     'raise BuildError(f"migration {path.name} failed{where}")'),
+     'f"{text.count(chr(10), 0, at) + 1}: {detail}") from None', 'f"{text.count(chr(10), 0, at) + 1}") from None'),
+    ("error line is the statement's, not the error's", SB,
+     "at = start + int(pos) - 1 if pos else start", "at = start"),
+    ("split: dollar quoting ignored", SB, '        elif kind == "dollar":\n', '        elif False:\n'),
+    ("split: quoted strings ignored", SB, "  | (?P<string>", "  | (?P<string>(?!)"),
+    ("split: E'' backslash escapes ignored", SB, r"""[eE]'(?:[^'\\]|\\.|'')*(?:'|\Z)|""", ""),
+    ("split: -- comments not skipped", SB, r"(?P<comment>--[^\n]*)", "(?P<comment>(?!))"),
+    ("split: block comments not nested", SB,
+     'level += 1 if text.startswith("/*", nxt) else -1', "level -= 1"),
+    ("split: BEGIN ATOMIC bodies not tracked", SB,
+     "                    depth += 1\n", "                    pass\n"),
+    ("split: parentheses ignored", SB, "            parens += 1\n", "            pass\n"),
+    ("unexpected exception exits 1 (no catch-all)", CLI,
+     "    except Exception as err:  # exit 1", "    except ZeroDivisionError as err:  # exit 1"),
+    ("another table's CHECK looked up in this one", SD,
+     "check = plan.checks.get(name) if isinstance", "check = plan.checks[name] if isinstance"),
     ("no teardown when the build fails", SB,
      """        except BaseException:
             self.teardown()
@@ -80,8 +107,8 @@ MUTANTS = [
      """'{"%s"}' % elem(i)"""),
     ("varchar length not honoured", SD, 'f"{column}-{i + 1}"[:length]', 'f"{column}-{i + 1}"'),
     ("nullable unsupported column blocks the table", SD, "        elif notnull:\n            missing", "        else:\n            missing"),
-    ("no CHECK retries", SD, "    while err is not None:\n        if not isinstance",
-     "    while err is not None:\n        return str(err)\n        if not isinstance"),
+    ("no CHECK retries", SD, "    while err is not None:\n        name = err.diag",
+     "    while err is not None:\n        return None, str(err)\n        name = err.diag"),
     ("CHECK retries stop at the first CHECK", SD,
      "                row = attempt  # this CHECK is satisfied; on to the next one, if any\n                break",
      "                if err is None:\n                    return ''\n                return 'x'"),

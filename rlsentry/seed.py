@@ -232,10 +232,10 @@ def _insert(conn, plan: _Plan, row: dict) -> tuple[dict | None, str]:
     insert, tries = plan.insert(), 0
     err = _try(conn, insert, row)
     while err is not None:
-        if not isinstance(err, psycopg.errors.CheckViolation):
-            return None, str(err).splitlines()[0]
         name = err.diag.constraint_name
-        check = plan.checks[name]
+        check = plan.checks.get(name) if isinstance(err, psycopg.errors.CheckViolation) else None
+        if check is None:  # not a CHECK, or another table's (a trigger inserted there)
+            return None, str(err).splitlines()[0]
         cols = [c for c in check.columns if c in row]
         options = [[row[c]] + (check.numbers if plan.generators[c][0].split("(")[0] in _NUMERIC
                                else check.strings) for c in cols]
