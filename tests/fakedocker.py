@@ -13,6 +13,8 @@ $FAKE_DOCKER_FAIL, a comma-separated list, breaks the daemon on purpose:
   db-exits      the postgres container exits as soon as it starts
   rest-run      `docker run` of PostgREST fails after creating the container
   wide-publish  ports are published on every interface, whatever `-p` asks
+  slow-run      the daemon takes 1.5 s to create a container, and creates it even if the
+                client that asked is killed meanwhile
 """
 
 import fcntl
@@ -211,6 +213,24 @@ def main(argv):
     if "daemon" in FAIL:
         raise Exit(1, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
     cmd, args = argv[0], argv[1:]
+    if cmd == "run" and "slow-run" in FAIL:
+        daemon = os.fork()
+        if daemon == 0:  # the daemon's side: carries on whatever happens to the client
+            os.setsid()
+            time.sleep(1.5)
+            code = 0
+            try:
+                print(locked(cmd, args))
+            except Exit as e:
+                print(e.message, file=sys.stderr)
+                code = e.code
+            sys.stdout.flush()
+            os._exit(code)
+        return sys.exit(os.waitstatus_to_exitcode(os.waitpid(daemon, 0)[1]))
+    return locked(cmd, args)
+
+
+def locked(cmd, args):
     if cmd == "version":
         return "27.0.0-fake"
     if cmd == "context":

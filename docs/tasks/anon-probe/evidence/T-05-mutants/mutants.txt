@@ -1,0 +1,105 @@
+# T-05: python3 docs/tasks/anon-probe/evidence/T-05-mutants/mutants.py, full suite per mutant on 5d99000, one mutant at a time.
+M01 db port published on every interface
+     10 failed, 68 passed, 1 skipped, 3 errors in 309.85s (0:05:09)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+M02 REST port published on every interface
+     10 failed, 68 passed, 1 skipped, 3 errors in 307.80s (0:05:07)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+M03 no --rm
+     1 failed, 80 passed, 1 skipped in 86.96s (0:01:26)
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+M04 no run label
+     10 failed, 71 passed, 1 skipped in 88.36s (0:01:28)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+M05 postgres image not pinned
+     12 failed, 66 passed, 1 skipped, 3 errors in 904.72s (0:15:04)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[pull-cannot
+M06 postgrest image not pinned
+     7 failed, 71 passed, 1 skipped, 3 errors in 680.36s (0:11:20)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+M07 no startup sweep (any backend)
+     3 failed, 78 passed, 1 skipped in 77.65s (0:01:17)
+       tests/test_docker.py::test_next_docker_run_sweeps_a_killed_run
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+       tests/test_teardown.py::test_next_run_sweeps_a_killed_run
+M08 docker sweep removes nothing
+     2 failed, 79 passed, 1 skipped in 76.73s (0:01:16)
+       tests/test_docker.py::test_next_docker_run_sweeps_a_killed_run
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+M09 sweep removes live runs' containers too
+     1 failed, 80 passed, 1 skipped in 135.01s (0:02:15)
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+M10 sweep: a reused pid counts as the owner
+     1 failed, 80 passed, 1 skipped in 79.18s (0:01:19)
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+M11 teardown removes nothing
+     9 failed, 72 passed, 1 skipped in 80.73s (0:01:20)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+       tests/test_docker.py::test_docker_migration_failure_exits_2_and_leaves_no_container
+M12 teardown by name only, not by label
+     SURVIVED: 81 passed, 1 skipped in 79.46s (0:01:19)
+M13 no teardown when the build fails
+     12 failed, 69 passed, 1 skipped in 76.13s (0:01:16)
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+       tests/test_docker.py::test_docker_migration_failure_exits_2_and_leaves_no_container
+       tests/test_migrations.py::test_unsupported_migration_names_file_line_and_missing_object[broken-002_broken.sql-named0]
+M14 auto does not fall back
+     6 failed, 75 passed, 1 skipped in 70.75s (0:01:10)
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       tests/test_docker.py::test_auto_falls_back_to_local_when_there_is_no_docker_cli
+M15 daemon absence not detected
+     1 failed, 80 passed, 1 skipped in 76.66s (0:01:16)
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[daemon-no
+M16 remote daemon accepted
+     2 failed, 79 passed, 1 skipped in 80.49s (0:01:20)
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[remote-not
+M17 pull failure not detected
+     2 failed, 79 passed, 1 skipped in 75.78s (0:01:15)
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[pull-cannot
+M18 nonce not checked
+     4 failed, 77 passed, 1 skipped in 80.25s (0:01:20)
+       tests/test_docker.py::test_docker_first_request_is_refused_when_the_nonce_is_not_ours[update
+       tests/test_docker.py::test_docker_first_request_is_refused_when_the_nonce_is_not_ours[delete
+       tests/test_guard.py::test_first_request_is_refused_when_the_nonce_is_not_ours[update
+       tests/test_guard.py::test_first_request_is_refused_when_the_nonce_is_not_ours[delete
+M19 docker alive() always true
+     2 failed, 79 passed, 1 skipped in 80.72s (0:01:20)
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[db-exits-postgres
+       tests/test_docker.py::test_docker_first_request_is_refused_when_a_container_has_stopped
+M20 published ports not checked
+     1 failed, 80 passed, 1 skipped in 80.99s (0:01:20)
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+M21 JWT secret on the command line
+     1 failed, 80 passed, 1 skipped in 81.02s (0:01:21)
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+M22 docker run not atomic w.r.t. signals
+     SURVIVED: 81 passed, 1 skipped in 77.78s (0:01:17)
+
+# After adding tests/test_docker.py::test_signal_while_docker_run_is_in_flight_leaves_no_container (fakedocker slow-run), M22 re-run alone:
+M22 docker run not atomic w.r.t. signals
+     1 failed, 81 passed, 1 skipped in 85.45s (0:01:25)
+       tests/test_docker.py::test_signal_while_docker_run_is_in_flight_leaves_no_container
+
+# M12 survives as an equivalent mutant: the run's container names are fixed before docker run, so removing by name and by the run label reach the same containers.

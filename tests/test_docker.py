@@ -185,6 +185,27 @@ def test_signal_mid_run_on_docker_leaves_no_container(fake_docker, state_dir, si
     assert residue() == before
 
 
+def test_signal_while_docker_run_is_in_flight_leaves_no_container(fake_docker, state_dir):
+    """The daemon creates a container even if its client is killed; a signal must not cut
+    `docker run` short, or teardown looks for the container before it exists."""
+    before = residue()
+    fake_docker.fail("slow-run")
+    proc = rlsentry("attack", "--backend", "docker", "--migrations", str(FIXTURES / "clean"),
+                    state_dir=state_dir)
+    deadline = time.monotonic() + 30
+    while not _runs(fake_docker):
+        assert time.monotonic() < deadline, "docker run was never called"
+        time.sleep(0.02)
+    proc.send_signal(signal.SIGINT)
+    _, err = proc.communicate(timeout=60)
+    time.sleep(3)  # longer than the daemon takes to create a container
+
+    assert proc.returncode == 2, err
+    assert "interrupted" in err
+    assert fake_docker.containers() == {}
+    assert residue() == before
+
+
 def test_next_docker_run_sweeps_a_killed_run(fake_docker, state_dir):
     killed = rlsentry("attack", "--backend", "docker", "--migrations", str(FIXTURES / "slow"),
                       state_dir=state_dir)
