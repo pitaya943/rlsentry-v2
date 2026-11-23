@@ -1,6 +1,8 @@
 # Design: anon-probe
 
-Status: DRAFT, in discussion with the owner. Open points are marked **OPEN**.
+Status: DRAFT. The owner moved this task to attack mode (see trail). The attack-mode
+design will replace this file. Everything below is kept as **live-probe notes**
+for roadmap task 3; its facts F1-F8 still hold.
 
 ## 1. Facts this design rests on
 

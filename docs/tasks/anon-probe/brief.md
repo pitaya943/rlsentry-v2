@@ -1,104 +1,118 @@
-# Brief: anon-probe — prove what the anon key can actually do
+# Brief: anon-probe — attack a disposable copy as the anon visitor
 
 Status: DRAFT, not approved.
 
-First task of the rlsentry chain (see `docs/spec/roadmap.md`).
+First task of the rlsentry chain (see `docs/spec/roadmap.md`). The slug is kept
+from the first draft; this task is the `attack` mode.
 
 ## Goal
 
-A developer who owns a Supabase project runs one command with the project URL
-and the public anon key, and gets a verdict per exposed table: can an anonymous
-visitor **read** rows from it, can they **write** to it. The verdict comes from
-actually trying, the way an attacker (or the CVE-2025-48757 researchers) would,
-not from reading the policy definitions. The command exits non-zero when
-anything is exposed, so it can block a deploy.
+rlsentry is a research and teaching tool about the class of flaw behind
+CVE-2025-48757: Supabase tables that an anonymous visitor, holding only the
+public anon key, can read or change.
 
-Why: Supabase's Security Advisor already warns about tables without RLS, and
-AI-generated apps still ship with tables readable and writable by anyone. A
-warning about configuration is easy to ignore and misses policies that are
-switched on but wrong (`using (true)`). Evidence of real access is not.
+After this task, a person points rlsentry at a Supabase project's migrations.
+rlsentry builds a throwaway copy of that database, fills it with fake rows, and
+attacks it exactly as an anonymous visitor would — really reading, inserting,
+updating and deleting — then reports, per table and per operation, what
+succeeded, with the evidence. The copy is thrown away afterwards.
+
+The repository also ships a small lab of deliberately vulnerable demo schemas,
+so anyone can run rlsentry and see each kind of verdict without a project of
+their own.
+
+Why this and not a warning: Supabase's Security Advisor already warns about
+configuration, and the flaw keeps shipping. A warning about a setting is easy to
+ignore and misses policies that are on but wrong (`using (true)`, checks that
+accept attacker-chosen values). A demonstrated read or write is not. Unlike
+scanners that probe a live project, attacking a disposable copy lets rlsentry
+behave exactly like an attacker, writes included, with nothing real at risk.
 
 ## Out of scope
 
-- Scanning projects the user does not own; any bulk or list-driven scanning of
-  many projects. One project per run.
+- Attacking any live or hosted project, including the owner's. The command
+  refuses such targets (S-7). Non-destructive probing of live projects is a
+  later task (`live-probe`).
+- Generating the Lovable-built target app. The owner does that by hand; turning
+  it into a lab target is the next task (`lovable-target`).
 - Logged-in (`authenticated`) users and cross-user access. Later task.
-- Storage buckets, RPC / database functions, Edge Functions, GraphQL. Later tasks.
-- Fixing policies or generating SQL fixes. rlsentry reports; it does not change
-  the project.
-- Running against a local Supabase from migrations in CI. Later task.
+- Storage buckets, RPC / database functions, Edge Functions, GraphQL, Realtime.
+- Fixing policies or generating SQL fixes.
 - Any web UI or hosted service.
 
 ## Scenarios
 
-- **S-1 Readable table is caught.** Given a project with a table that has RLS
-  off (or a policy letting anyone select), when the user runs the scan with the
-  anon key, then the report marks that table `READ: EXPOSED`, says how many rows
-  an anonymous visitor can see, and the command exits non-zero.
+- **S-1 Readable table is caught.** Given migrations that create a table with
+  RLS off, when the user runs the attack, then the report marks that table
+  `READ: EXPOSED`, shows how many of the fake rows the anonymous visitor read
+  and one of them as evidence, and the command exits non-zero.
 - **S-2 Protected table is not a false alarm.** Given a table with RLS on and no
-  policy granting anon access, when the user runs the scan, then the report marks
-  it `READ: protected` and `WRITE: protected`.
-- **S-3 "RLS on but wrong" is caught.** Given a table with RLS enabled and a
-  policy `using (true)` for anon, when the user runs the scan, then it is marked
-  `READ: EXPOSED` — the case a configuration warning about "RLS disabled" misses.
-- **S-4 Writable table is caught without leaving data behind.** Given a table an
-  anonymous visitor can insert into, when the user runs the scan, then the report
-  marks it `WRITE: EXPOSED`, and afterwards the table holds exactly the rows it
-  held before the scan.
-- **S-5 Unsure is said, not guessed.** Given a table where the scan cannot tell
-  whether anon can write without actually keeping a row, when the user runs the
-  scan, then it is marked `WRITE: unknown` with the reason, never `protected`.
-- **S-6 Exposed data is not echoed.** Given a readable table holding rows, when
-  the scan reports it, then the output names the table, its column names and a
-  row count, and contains none of the row values.
-- **S-7 Clean project passes.** Given a project where every exposed table is
-  protected, when the user runs the scan, then every table is listed as
-  protected and the command exits zero.
-- **S-8 Machine-readable report.** Given any scan, when the user asks for JSON
-  output, then they get one record per table with its read and write verdicts,
-  usable by a CI step.
-- **S-9 Wrong key is not a clean bill of health.** Given a URL or key that the
-  project rejects, when the user runs the scan, then it says so and exits with a
-  code distinct from both "clean" and "exposed".
+  policy for the anonymous visitor, when the user runs the attack, then every
+  operation on it is marked `protected`.
+- **S-3 "RLS on but wrong" is caught.** Given a table with RLS on and a policy
+  `using (true)` for anon, when the user runs the attack, then it is marked
+  `READ: EXPOSED`.
+- **S-4 Each write operation is tried for real.** Given a table the anonymous
+  visitor may insert into but not update or delete, when the user runs the
+  attack, then the report marks `INSERT: EXPOSED` with the row it created as
+  evidence, and `UPDATE: protected`, `DELETE: protected`. The same holds for
+  every combination of the three in the lab.
+- **S-5 Policies that accept chosen values are caught.** Given a table whose
+  insert policy only accepts rows with a particular value (for example
+  `status = 'pending'`), when the user runs the attack, then rlsentry finds an
+  accepted row and marks `INSERT: EXPOSED`. When nothing it tries is accepted,
+  the report says how many rows it tried, not just `protected`.
+- **S-6 Migrations of a real project are accepted.** Given a folder of Supabase
+  migrations that use the usual Supabase pieces (the `anon` and
+  `authenticated` roles, `auth.uid()`, `auth.users` references), when the user
+  runs the attack on it, then the copy builds and the attack runs. A migration
+  that uses a piece rlsentry does not provide is reported by name, and the run
+  stops with a distinct exit code instead of attacking a partial copy.
+- **S-7 Never attacks a live project.** Given a target that is not a copy
+  rlsentry built itself (for example a hosted project URL), when the user runs
+  the attack, then it refuses before sending any request to it.
+- **S-8 Nothing is left behind.** Given any run, including one that fails
+  halfway or is interrupted, when it ends, then the throwaway copy and anything
+  it started are gone.
+- **S-9 The lab shows every verdict.** Given the lab shipped in the repository,
+  when the user runs the attack on it, then the report contains at least one
+  table for each of: read exposed, insert exposed, update exposed, delete
+  exposed, value-policy insert exposed, and fully protected.
+- **S-10 Machine-readable report and exit codes.** Given any run, when the user
+  asks for JSON, then they get one record per table with a verdict and evidence
+  per operation. Exit code: `0` nothing exposed, `1` something exposed, `2`
+  could not build or attack the copy.
 
 ## How to try it
 
-1. Start a local Supabase (or use a throwaway project), create three tables:
-   one with RLS off, one with RLS on and `using (true)`, one with RLS on and no
-   policies. Insert a few rows in each.
-2. Run `rlsentry scan --url <project url> --anon-key <anon key>`.
-3. See the first two marked EXPOSED with row counts and no row values, the third
-   protected, exit code non-zero. Count rows in each table: unchanged.
-4. Drop the two bad tables, rerun: exit code zero.
+1. `rlsentry attack --lab` → the report from S-9, exit code 1.
+2. Point it at a folder with one clean migration
+   (`rlsentry attack --migrations ./clean`) → everything protected, exit 0.
+3. Run `rlsentry attack --target https://<something>.supabase.co` → refused,
+   nothing sent (S-7).
+4. Interrupt a run with Ctrl-C; check that no database or process from it is
+   still running (S-8).
 
 ## Critical areas
 
-- **The write probe.** It runs against the user's real, possibly production,
-  database. A mistake here writes or corrupts their data. Any change to how
-  writes are probed is high risk.
-- **The report output.** It must never carry row values from the user's tables
-  (they may be other people's personal data, and reports end up in CI logs).
+- **The live-target guard (S-7).** It is what keeps an attacking tool from
+  writing to a real database. Any change to how a target is accepted is high risk.
+- **Teardown (S-8).** A leftover copy or process on the user's machine.
 
 ## Assumptions
 
-- Tables are discovered from what the project's REST API publishes to the anon
-  key; when it publishes nothing, the user can name tables by hand. Only the
-  `public` schema (and others the API exposes) — not the whole database.
-- No service-role key or database password is asked for or accepted in this
-  task: the scan sees exactly what an outsider sees.
-- Write probing is on by default and must never persist a row; where that
-  cannot be guaranteed for a table, the verdict is `unknown` (S-5). Update and
-  delete are reported only as far as they can be tested without changing rows.
-- How writes are probed (owner's decision): first by inference — send an insert
-  built to fail a table constraint, so the database's answer shows whether the
-  row-level check let it through, with no row written; as fallback, an insert
-  the API is asked to roll back, used only when the project is shown to honour
-  that request. Inserting a real row and deleting it afterwards is never done.
-  The inference rests on the database checking row-level policies before
-  constraints; the design must prove that by running it, not assume it.
-- Row counts may be capped (e.g. "1000+") to keep the scan cheap.
-- A project with up to a few hundred exposed tables finishes in about a minute;
-  requests are sequential-ish and rate-limited so the scan is not a load test.
+- The throwaway copy is plain PostgreSQL plus the same REST layer Supabase uses,
+  with Supabase's roles and a small stand-in for `auth` (enough for `auth.uid()`
+  and `auth.users`), not the full Supabase stack. Migrations needing more
+  (storage, extensions beyond common ones) stop the run (S-6).
+- Fake rows are generated by rlsentry from each column's type, a few per table;
+  migrations' own seed data is used too when present.
+- Because every row is fake, the report shows evidence values (one row per
+  finding). Nothing is stored between runs except a report file the user names.
+- Value-policy attacks (S-5) try values from column types, check constraints,
+  enum values and values visible in readable rows; a bounded number of tries per
+  table (default 50).
+- Requires Docker or a local PostgreSQL + REST layer install; rlsentry says
+  which is missing. A run on the lab finishes in under a minute.
 - Python command-line tool, installable with pip.
-- Nothing is stored between runs; the report is printed (and optionally written
-  to a file the user names).
+- One run at a time per machine is enough; two at once get separate copies.
