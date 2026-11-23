@@ -31,6 +31,7 @@ _LOCAL_SCHEMES = ("unix://", "npipe://")
 PGDATA = "/var/lib/postgresql/data"  # the postgres image's VOLUME
 RUN_TIMEOUT = 120  # seconds a `docker run` client waits for the daemon
 LATE_GRACE = 10  # seconds teardown waits for a container whose `docker run` was cut off
+_NO_ANSWER = 124  # _docker's return code when the client got no answer in time
 
 
 class DockerBackend:
@@ -98,8 +99,10 @@ class DockerBackend:
 
     def log_tail(self, server: str) -> str:
         logs = _docker("logs", "--tail", "20", self._db if server == "db" else self._rest)
-        if logs.returncode != 0:
+        if "No such container" in logs.stderr:
             return "(no log: the container is gone, removed by --rm when it exited)"
+        if logs.returncode != 0:
+            return f"(no log: docker logs failed: {_last_line(logs.stderr)})"
         return (logs.stdout + logs.stderr).strip()[-800:]
 
     def stop(self) -> None:
@@ -154,9 +157,6 @@ class DockerBackend:
             return  # the container is already gone; _connect reports why
         if published != wanted:
             raise BuildError(f"docker published {sorted(published)}, expected {sorted(wanted)}")
-
-
-_NO_ANSWER = 124
 
 
 def _docker(*args: str, env: dict[str, str] | None = None, timeout: float = 60) -> subprocess.CompletedProcess:

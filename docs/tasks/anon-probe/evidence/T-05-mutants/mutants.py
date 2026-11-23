@@ -54,6 +54,18 @@ MUTANTS = [
      "                if not left and not self._unsettled:\n", "                if not left:\n"),
     ("teardown looks once: never looks again after rm", DK,
      "                    _docker(\"rm\", \"-f\", *left)\n", "                    _docker(\"rm\", \"-f\", *left)\n                    break\n"),
+    ("teardown rm without -f (verifier B11)", DK, '                    _docker("rm", "-f", *left)', '                    _docker("rm", *left)'),
+    ("sweep rm without -f (verifier B12)", DK, '            _docker("rm", "-f", *stale)', '            _docker("rm", *stale)'),
+    ("a container once seen stays unsettled (verifier B07)", DK, "                self._unsettled -= set(left)\n", ""),
+    ("teardown ps without -a", DK, 'listed = _docker("ps", "-a", "--filter", label,', 'listed = _docker("ps", "--filter", label,'),
+    ("sweep ps without -a", DK, 'listed = _docker("ps", "-a", "--filter", f"label={RUN_LABEL}",', 'listed = _docker("ps", "--filter", f"label={RUN_LABEL}",'),
+    ("docker run without -d", DK, 'argv = ["run", "-d", "--rm", "--name", name,', 'argv = ["run", "--rm", "--name", name,'),
+    ("context inspect without the endpoint template", DK,
+     '"context", "inspect", "--format", "{{.Endpoints.docker.Host}}")', '"context", "inspect")'),
+    ("inspect without the State.Running template", DK,
+     '_docker("inspect", "--format", "{{.State.Running}}", *self._started)', '_docker("inspect", *self._started)'),
+    ("log_tail: an unreachable daemon reads as a gone container", DK,
+     '        if "No such container" in logs.stderr:\n', '        if logs.returncode != 0:\n'),
 ]
 
 

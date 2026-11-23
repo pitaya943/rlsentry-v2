@@ -202,8 +202,9 @@ def test_signal_mid_run_on_docker_leaves_no_container(fake_docker, state_dir, si
 
 
 def test_signal_while_docker_run_is_in_flight_leaves_no_container(fake_docker, state_dir):
-    """The daemon creates a container even if its client is killed; a signal must not cut
-    `docker run` short, or teardown looks for the container before it exists."""
+    """The signal cuts `docker run` short, but the daemon creates the container anyway:
+    teardown waits for it, removes it, and stops waiting as soon as it has (no full grace,
+    no warning)."""
     before = residue()
     fake_docker.fail("slow-run")
     proc = rlsentry("attack", "--backend", "docker", "--migrations", str(FIXTURES / "clean"),
@@ -213,17 +214,21 @@ def test_signal_while_docker_run_is_in_flight_leaves_no_container(fake_docker, s
         assert time.monotonic() < deadline, "docker run was never called"
         time.sleep(0.02)
     proc.send_signal(signal.SIGINT)
+    sent = time.monotonic()
     _, err = proc.communicate(timeout=60)
+    took = time.monotonic() - sent
     time.sleep(3)  # longer than the daemon takes to create a container
 
     assert proc.returncode == 2, err
     assert "interrupted" in err
+    assert took < 6, f"teardown took {took:.1f}s: it kept waiting after the container was removed"
+    assert "could not confirm" not in err
     assert fake_docker.containers() == {}
     assert fake_docker.volumes() == []
     assert residue() == before
 
 
-def test_docker_run_cut_off_by_its_timeout_leaves_no_container(fake_docker, tmp_path, monkeypatch):
+def test_docker_run_cut_off_by_its_timeout_leaves_no_container(fake_docker, tmp_path, monkeypatch, capsys):
     """The client gives up, the daemon carries on and creates the container later: teardown
     must wait for it rather than trust one look made too early."""
     from rlsentry.backends import docker
@@ -232,9 +237,13 @@ def test_docker_run_cut_off_by_its_timeout_leaves_no_container(fake_docker, tmp_
     monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(docker, "RUN_TIMEOUT", 0.5)  # a daemon slower than the client waits
     fake_docker.fail("slow-run")  # 1.5 s to create, whatever happens to the client
+    started = time.monotonic()
     with pytest.raises(BuildError, match="no answer"):
         with Sandbox(FIXTURES / "clean", backend="docker"):
             pass
+    took = time.monotonic() - started
+    assert took < 6, f"teardown took {took:.1f}s: it kept waiting after the container was removed"
+    assert "could not confirm" not in capsys.readouterr().err
     time.sleep(3)
     assert fake_docker.containers() == {}
     assert fake_docker.volumes() == []
@@ -253,6 +262,16 @@ def test_teardown_that_cannot_reach_the_daemon_says_so(fake_docker, tmp_path, mo
     assert "could not confirm this run's containers are gone" in err
     assert f"label=rlsentry.run={run_id}" in err
     assert "Cannot connect to the Docker daemon" in err
+
+
+def test_log_tail_says_why_there_is_no_log(fake_docker):
+    from rlsentry.backends.docker import DockerBackend
+
+    backend = DockerBackend("nolog")
+    assert "the container is gone" in backend.log_tail("db")
+    fake_docker.fail_now("daemon")
+    said = backend.log_tail("db")
+    assert "docker logs failed" in said and "Cannot connect to the Docker daemon" in said
 
 
 def test_next_docker_run_sweeps_a_killed_run(fake_docker, state_dir):
@@ -285,6 +304,14 @@ def test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers(fake_docke
         # This pid is alive, but with another start time: a dead run whose pid was reused.
         fake_docker.docker("run", "-d", "--name", "reused-pid", "--label", "rlsentry.run=y",
                            "--label", f"rlsentry.owner={host}/{os.getpid()}/0", "busybox")
+        # A dead run's container that was created but never started (its `docker run` failed):
+        # only `ps -a` lists it.
+        failed_start = subprocess.run(
+            ["docker", "run", "-d", "--rm", "--name", "never-started", "--label", "rlsentry.run=z",
+             "--label", f"rlsentry.owner={host}/{os.getpid()}/0", "--network", "container:unlabelled",
+             "postgrest/postgrest:v12.2.3"],
+            env=dict(os.environ, FAKE_DOCKER_FAIL="rest-run"), capture_output=True, text=True)
+        assert failed_start.returncode != 0 and "never-started" in fake_docker.containers()
 
         code, _, err = run_rlsentry("attack", "--backend", "docker", "--migrations",
                                     str(FIXTURES / "clean"), state_dir=state_dir)

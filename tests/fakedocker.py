@@ -6,6 +6,11 @@ the container's port (PostgREST through `--network container:<db>`, as the real 
 database container's network namespace). Any other image runs `sleep`. State lives in
 $FAKE_DOCKER_DIR: state.json (images, containers) and calls.jsonl (every argv, in order).
 
+Strict where rlsentry relies on a flag, as a real daemon is: `rm` refuses a running container
+without `-f`; `ps` without `-a` lists running containers only; `run` without `-d` stays
+attached until the container exits; `context inspect` without the endpoint template prints
+JSON; `inspect` without a template prints JSON.
+
 Volumes: `postgres:16` declares VOLUME /var/lib/postgresql/data, so a container of it gets an
 anonymous volume unless something (`--tmpfs`) is mounted there. As with Docker, `rm -v`
 removes a container's anonymous volumes and plain `rm` leaves them; a `--rm` container that
@@ -44,6 +49,7 @@ FAIL = set(filter(None, os.environ.get("FAKE_DOCKER_FAIL", "").split(",")))
 if (D / "fail").exists():
     FAIL |= set(filter(None, (D / "fail").read_text().strip().split(",")))
 VOLUMES = {"postgres:16": ["/var/lib/postgresql/data"]}
+ATTACHED = []
 PG_BIN = sorted(glob.glob("/usr/lib/postgresql/*/bin"))[-1]
 
 
@@ -117,10 +123,12 @@ def published(c, port):
 
 
 def run(state, args):
-    opts = {"rm": False, "name": None, "labels": {}, "ports": [], "env": {}, "network": None, "tmpfs": []}
+    opts = {"rm": False, "name": None, "labels": {}, "ports": [], "env": {}, "network": None, "tmpfs": [],
+            "detach": False}
     while args and args[0].startswith("-"):
         flag = args.pop(0)
         if flag == "-d":
+            opts["detach"] = True
             continue
         if flag == "--rm":
             opts["rm"] = True
@@ -211,6 +219,8 @@ def run(state, args):
     else:
         spawn(c, ["sleep", "3600"])
     c["status"] = "running"
+    if not opts["detach"]:
+        ATTACHED.append(name)  # the client follows the container until it exits
     return cid
 
 
@@ -254,16 +264,26 @@ def locked(cmd, args):
     if cmd == "version":
         return "27.0.0-fake"
     if cmd == "context":
-        return "tcp://10.20.30.40:2376" if "remote" in FAIL else "unix:///var/run/docker.sock"
+        host = "tcp://10.20.30.40:2376" if "remote" in FAIL else "unix:///var/run/docker.sock"
+        if args != ["inspect", "--format", "{{.Endpoints.docker.Host}}"]:
+            return json.dumps([{"Name": "default", "Endpoints": {"docker": {"Host": host}}}])
+        return host
     with open(D / "lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         state = load()
         state.setdefault("volumes", {})
         prune(state)
         try:
-            return dispatch(state, cmd, args)
+            out = dispatch(state, cmd, args)
         finally:
             (D / "state.json").write_text(json.dumps(state, indent=1))
+    for name in ATTACHED:
+        while True:
+            c = load()["containers"].get(name)
+            if c is None or not running(c):
+                break
+            time.sleep(0.2)
+    return out
 
 
 def dispatch(state, cmd, args):
@@ -279,20 +299,22 @@ def dispatch(state, cmd, args):
     if cmd == "run":
         return run(state, list(args))
     if cmd == "ps":
-        quiet, template, filters = False, "{{.ID}}\t{{.Names}}", []
+        quiet, template, filters, every = False, "{{.ID}}\t{{.Names}}", [], False
         while args:
             flag = args.pop(0)
             if flag == "-q":
                 quiet = True
+            elif flag == "-a":
+                every = True
             elif flag == "--filter":
                 filters.append(args.pop(0))
             elif flag == "--format":
                 template = args.pop(0)
-            elif flag != "-a":
+            else:
                 raise Exit(125, f"fake docker: unsupported flag {flag}")
         lines = []
         for c in state["containers"].values():
-            ok = True
+            ok = every or running(c)  # without -a: running containers only
             for f in filters:
                 key, _, spec = f.partition("=")
                 assert key == "label", f
@@ -332,6 +354,7 @@ def dispatch(state, cmd, args):
     if cmd == "rm":
         refs = [a for a in args if not a.startswith("-")]
         flags = "".join(a.lstrip("-") for a in args if a.startswith("-"))
+        errors = []
         if "flaky-rm" in FAIL and not (D / "rm-failed").exists():
             (D / "rm-failed").touch()
             raise Exit(1, "Error response from daemon: removal of container is already in progress")
@@ -340,11 +363,15 @@ def dispatch(state, cmd, args):
             name = find(state, ref)
             if name is None:
                 missing.append(ref)
+            elif running(state["containers"][name]) and "f" not in flags:
+                errors.append(f'Error response from daemon: cannot remove container "/{name}": container is '
+                              "running: stop the container before removing or force remove")
             else:
                 remove(state, name, volumes="v" in flags or "volumes" in flags)
                 print(ref)
-        if missing:
-            raise Exit(1, "\n".join(f"Error response from daemon: No such container: {m}" for m in missing))
+        errors += [f"Error response from daemon: No such container: {m}" for m in missing]
+        if errors:
+            raise Exit(1, "\n".join(errors))
         return None
     raise Exit(1, f"fake docker: unsupported command {cmd}")
 
