@@ -1,0 +1,11 @@
+# Fix round 3: the new tests (tests/test_verdicts.py, tests/test_host.py at fa1209e) against rlsentry at 47467b7, isolated by iso.sh.
+# Both test_host.py tests fail there only because what they use did not exist yet (as_anon; STATEMENT_TIMEOUT); their proof is the mutants (h5, h7, h8, h9, h4, "no statement timeout") in T-04-mutants/mutants.txt.
+FAILED tests/test_verdicts.py::test_a_refusal_from_the_tables_own_code_is_never_read_as_rls[t42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_the_tables_own_code_is_never_read_as_rls[t42m]
+FAILED tests/test_verdicts.py::test_a_refusal_from_the_tables_own_code_is_never_read_as_rls[forged-message]
+FAILED tests/test_verdicts.py::test_a_refusal_from_the_tables_own_code_is_never_read_as_rls[upd42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_the_tables_own_code_is_never_read_as_rls[del42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_the_tables_own_code_is_never_read_as_rls[update-skipped]
+FAILED tests/test_host.py::test_inspector_runs_migration_code_only_as_postgres
+FAILED tests/test_host.py::test_a_migration_function_that_never_returns_cannot_hang_the_run
+8 failed, 55 deselected in 7.18s

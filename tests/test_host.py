@@ -157,6 +157,7 @@ create function public.ok(v text) returns boolean language plpgsql as $$
 begin
   insert into public.calls values (current_user);
   begin
+    reset role;  -- back to the session role, had rlsentry run this after SET ROLE anon
     execute 'copy (select 1) to program ''touch {victim_dir}/x''';
   exception when insufficient_privilege then null;
   end;
