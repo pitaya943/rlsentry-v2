@@ -11,6 +11,7 @@ import glob
 import json
 import os
 import pwd
+import re
 import secrets
 import shutil
 import signal
@@ -27,7 +28,7 @@ from pathlib import Path
 import psycopg
 
 from rlsentry.channel import AnonChannel, anon_jwt
-from rlsentry.seed import seed_table
+from rlsentry.seed import seed
 
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
@@ -43,6 +44,41 @@ alter default privileges in schema public grant all on sequences to anon, authen
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 create schema rlsentry_run;
 create table rlsentry_run.nonce (value text not null);
+
+-- Extensions where Supabase puts them, on the search path as there.
+create schema extensions;
+grant usage on schema extensions to anon, authenticated, service_role;
+create extension pgcrypto with schema extensions;
+create extension "uuid-ossp" with schema extensions;
+alter database postgres set search_path = "$user", public, extensions;
+
+-- The auth stand-in: the parts of Supabase's auth schema that migrations and policies use.
+-- The functions read the claims PostgREST sets for each request, as Supabase's do.
+create schema auth;
+grant usage on schema auth to anon, authenticated, service_role;
+create table auth.users (
+  id uuid primary key default gen_random_uuid(),
+  aud varchar(255) default 'authenticated',
+  role varchar(255) default 'authenticated',
+  email varchar(255),
+  encrypted_password varchar(255),
+  email_confirmed_at timestamptz,
+  phone text,
+  raw_app_meta_data jsonb default '{}',
+  raw_user_meta_data jsonb default '{}',
+  is_anonymous boolean not null default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create function auth.uid() returns uuid language sql stable as $$
+  select (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')::uuid
+$$;
+create function auth.role() returns text language sql stable as $$
+  select nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'
+$$;
+create function auth.jwt() returns jsonb language sql stable as $$
+  select nullif(current_setting('request.jwt.claims', true), '')::jsonb
+$$;
 """
 
 
@@ -164,7 +200,7 @@ class Sandbox:
         )
         self._conn = _connect(pg_port, pg, self._run_dir / "postgres.log")
         self._conn.execute(_SETUP_SQL)
-        self._apply_migrations()
+        self._apply_migrations(bins["psql"], pg_port)
         self._seed()
         self._conn.execute("insert into rlsentry_run.nonce values (%s)", (self._nonce,))
 
@@ -173,6 +209,7 @@ class Sandbox:
         conf.write_text(
             f'db-uri = "postgres://authenticator@127.0.0.1:{pg_port}/postgres"\n'
             'db-schemas = "public"\n'
+            'db-extra-search-path = "public, extensions"\n'
             'db-anon-role = "anon"\n'
             f'jwt-secret = "{self._jwt_secret}"\n'
             'server-host = "127.0.0.1"\n'
@@ -185,25 +222,38 @@ class Sandbox:
         _wait_http(self._rest_port, rest, self._run_dir / "postgrest.log")
         self._running = True
 
-    def _apply_migrations(self) -> None:
+    def _apply_migrations(self, psql: str, port: int) -> None:
+        """Each file in one transaction, as the Supabase CLI applies them. psql names the line
+        of the failing statement; the error names the missing object."""
         files = sorted(self._migrations.glob("*.sql"))
         if not files:
             raise BuildError(f"no .sql migrations in {self._migrations}")
         for path in files:
-            try:
-                with self._conn.transaction():
-                    self._conn.execute(path.read_text())
-            except psycopg.Error as err:
-                raise BuildError(f"migration {path.name} failed: {str(err).strip()}") from err
+            with path.open("rb") as migration:
+                run = subprocess.run(
+                    [psql, "-X", "-q", "-h", "127.0.0.1", "-p", str(port), "-U", "postgres",
+                     "-d", "postgres", "-v", "ON_ERROR_STOP=1", "--single-transaction", "-f", "-"],
+                    stdin=migration, capture_output=True,
+                    env={"PATH": os.environ.get("PATH", ""), "LANG": "C.UTF-8"},
+                )
+            if run.returncode != 0:
+                # psql:<stdin>:<line>: ERROR:  <message>, then LINE/HINT context
+                err = run.stderr.decode(errors="replace").strip()
+                m = re.search(r"^psql:<stdin>:(\d+): ERROR:\s+(.*)", err, re.M | re.S)
+                where, detail = (f" at line {m[1]}", m[2]) if m else ("", err)
+                raise BuildError(f"migration {path.name} failed{where}: {detail}")
 
     def _seed(self) -> None:
         self.tables = [r[0] for r in self._conn.execute(
             "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace"
             " where n.nspname = 'public' and c.relkind in ('r', 'p') order by c.relname"
         )]
-        for table in self.tables:
-            _, notes = seed_table(self._conn, "public", table)
-            self.notes[table] = notes
+        seeded = seed(self._conn, [("public", t) for t in self.tables])  # + auth.users etc. they reference
+        empty = [f"{s}.{t}: {r.reason}" for (s, t), r in seeded.items() if r.rows == 0]
+        if empty:
+            # An empty table says nothing about its policies: never attack a partial copy.
+            raise BuildError("could not seed " + "; ".join(empty))
+        self.notes = {t: [r.note] for (s, t), r in seeded.items() if s == "public"}
 
     def _verify(self) -> None:
         """Called by the channel before its first request: is this still our copy?"""
@@ -267,7 +317,7 @@ def _find_binaries() -> dict[str, str]:
     pg_dirs = sorted(glob.glob("/usr/lib/postgresql/*/bin"),
                      key=lambda d: int(Path(d).parent.name) if Path(d).parent.name.isdigit() else 0,
                      reverse=True)
-    for name in ("initdb", "postgres"):
+    for name in ("initdb", "postgres", "psql"):
         path = shutil.which(name) or next(
             (os.path.join(d, name) for d in pg_dirs if os.access(os.path.join(d, name), os.X_OK)), None)
         if path:
