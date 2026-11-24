@@ -389,6 +389,59 @@ def test_docker_sandbox_answers_and_tears_down(fake_docker, tmp_path, monkeypatc
     assert fake_docker.volumes() == []
 
 
+# T-06 on this backend: a `protected` write rests on the server's log, PostgreSQL's own account
+# of the request. The log is in the container, so the server reads it out (_Log); nothing reads
+# this machine's files, which the fake shares and a real daemon does not.
+
+_NO_WRITE_POLICY = """
+create table inbox (id bigint generated always as identity primary key, note text);
+alter table inbox enable row level security;
+"""
+
+
+@pytest.mark.parametrize("backend", ["local", "docker"])
+def test_writes_rls_refuses_are_protected_on_the_servers_own_account(fake_docker, tmp_path,
+                                                                    state_dir, backend):
+    folder = tmp_path / "migrations"
+    folder.mkdir()
+    (folder / "001_t.sql").write_text(_NO_WRITE_POLICY)
+    code, out, err = run_rlsentry("attack", "--backend", backend, "--migrations", str(folder),
+                                  "--json", state_dir=state_dir)
+    assert code == 0, err
+    results = json.loads(out)["findings"][0]["results"]
+    assert results["INSERT"]["outcome"] == "protected"
+    assert "row-level security refuses the new row" in results["INSERT"]["basis"]
+    for op in ("UPDATE", "DELETE"):
+        assert results[op]["outcome"] == "protected"
+        assert "row-level security lets it reach no row" in results[op]["basis"]
+    assert len(_runs(fake_docker)) == (2 if backend == "docker" else 0)
+
+
+@pytest.mark.parametrize("backend", ["local", "docker"])
+def test_without_the_servers_log_no_write_is_protected(fake_docker, tmp_path, monkeypatch, backend):
+    # A server that keeps no jsonlog (as an image or daemon might) gives no account of any
+    # request: the same refusals as above are no answer from row-level security (exit 2),
+    # never `protected`. The server's settings are given on its command line, which nothing
+    # in the database (ALTER SYSTEM included) overrides, so the run itself is what changes.
+    import rlsentry.sandbox
+    from rlsentry.attack import attack
+    from rlsentry.attacker import AttackError
+
+    monkeypatch.setitem(rlsentry.sandbox._EVIDENCE_LOG, "log_destination", "stderr")
+    monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
+    folder = tmp_path / "migrations"
+    folder.mkdir()
+    (folder / "001_t.sql").write_text(_NO_WRITE_POLICY)
+    with Sandbox(folder, backend=backend) as sb:
+        assert sb._conn.execute("select pg_current_logfile('jsonlog')").fetchone()[0] is None
+        try:
+            got = {op.value: f"{r.outcome.value}: {r.basis}"
+                   for f in attack(sb) for op, r in f.results.items()}
+        except AttackError as err:
+            got = str(err)
+    assert "inbox: INSERT got no answer from row-level security" in got, got
+
+
 # The real thing, where a Docker daemon answers (not in the environment this was built in).
 
 def _real_daemon():

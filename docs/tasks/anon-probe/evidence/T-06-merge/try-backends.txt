@@ -1,0 +1,155 @@
+$ rlsentry attack --help
+usage: rlsentry attack [-h] (--lab | --migrations DIR | --target URL) [--json]
+                       [--backend {auto,docker,local}]
+
+options:
+  -h, --help            show this help message and exit
+  --lab                 attack the bundled lab schemas
+  --migrations DIR      folder of .sql migrations
+  --target URL          refused: rlsentry never attacks a live project
+  --json                print the report as JSON
+  --backend {auto,docker,local}
+                        where the copy runs: docker containers, local
+                        PostgreSQL and PostgREST, or auto (docker if it can
+                        run here, else local)
+[exit 0]
+
+$ docker version --format {{.Server.Version}}
+
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+[exit 1]
+
+$ rlsentry attack --migrations tests/fixtures/clean
+rlsentry: docker unavailable (no Docker daemon answers: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?); using the local backend
+rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-24T18:09:11+00:00)
+
+public.profiles
+  READ: protected - anon read 0 rows
+  INSERT: protected (6 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "profiles"; row-level security refuses the new row (anon has no INSERT policy on profiles)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on profiles); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on profiles))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on profiles); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on profiles))
+  note: seeded 5 rows
+
+0 exposed operation(s) in 1 table(s).
+[exit 0]
+
+$ rlsentry attack --backend docker --migrations tests/fixtures/clean
+rlsentry: could not build or attack the copy: docker backend: no Docker daemon answers: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+[exit 2]
+
+$ rlsentry attack --backend local --migrations tests/fixtures/clean
+rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-24T18:09:13+00:00)
+
+public.profiles
+  READ: protected - anon read 0 rows
+  INSERT: protected (6 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "profiles"; row-level security refuses the new row (anon has no INSERT policy on profiles)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on profiles); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on profiles))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on profiles); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on profiles))
+  note: seeded 5 rows
+
+0 exposed operation(s) in 1 table(s).
+[exit 0]
+
+### the same commands with tests/fakedocker.py as the docker CLI and daemon
+$ rlsentry attack --lab
+rlsentry 0.1.0 attack on lab (2026-11-24T18:09:14+00:00)
+
+public.lab_delete_open
+  READ: protected - anon read 0 rows
+  INSERT: protected (12 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "lab_delete_open"; row-level security refuses the new row (anon has no INSERT policy on lab_delete_open)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_delete_open); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_delete_open))
+  DELETE: EXPOSED - anon deleted 5 row(s) with DELETE without a filter (confirmed as superuser)
+    evidence: {"rows_deleted": 5, "deleted": {"id": 1}}
+  note: seeded 5 rows
+public.lab_insert_only
+  READ: protected - anon read 0 rows
+  INSERT: EXPOSED - anon inserted a row (HTTP 201)
+    evidence: {"row": {"id": 6, "email": "email-6", "note": "note-6"}}
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_insert_only); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_insert_only))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_insert_only); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_insert_only))
+  note: seeded 5 rows
+public.lab_no_policy
+  READ: protected - anon read 0 rows
+  INSERT: protected (12 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "lab_no_policy"; row-level security refuses the new row (anon has no INSERT policy on lab_no_policy)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_no_policy); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_no_policy))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_no_policy); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_no_policy))
+  note: seeded 5 rows
+public.lab_owner_only
+  READ: protected - anon read 0 rows
+  INSERT: protected (12 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "lab_owner_only"; row-level security refuses the new row (refused by anon's INSERT policies on lab_owner_only: "owner adds")
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (refused by anon's UPDATE policies on lab_owner_only: "owner edits"); PATCH without a filter: HTTP 204, row-level security lets it reach no row (refused by anon's UPDATE policies on lab_owner_only: "owner edits"))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (refused by anon's DELETE policies on lab_owner_only: "owner deletes"); DELETE without a filter: HTTP 204, row-level security lets it reach no row (refused by anon's DELETE policies on lab_owner_only: "owner deletes"))
+  note: seeded 5 rows
+public.lab_rls_off
+  READ: EXPOSED - anon read 5 row(s)
+    evidence: {"rows_read": 5, "row": {"id": 1, "email": "email-1", "note": "note-1"}}
+  INSERT: EXPOSED - anon inserted a row (HTTP 201)
+    evidence: {"row": {"id": 6, "email": "email-6", "note": "note-6"}}
+  UPDATE: EXPOSED - anon changed 1 row(s) with PATCH by primary key (confirmed as superuser)
+    evidence: {"before": {"id": 1, "email": "email-1", "note": "note-1"}, "after": {"id": 1, "email": "email-6", "note": "note-1"}}
+  DELETE: EXPOSED - anon deleted 1 row(s) with DELETE by primary key (confirmed as superuser)
+    evidence: {"rows_deleted": 1, "deleted": {"id": 1}}
+  note: seeded 5 rows
+public.lab_update_open
+  READ: protected - anon read 0 rows
+  INSERT: protected (12 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "lab_update_open"; row-level security refuses the new row (anon has no INSERT policy on lab_update_open)
+  UPDATE: EXPOSED - anon changed 5 row(s) with PATCH without a filter (confirmed as superuser)
+    evidence: {"before": {"id": 1, "email": "email-1", "note": "note-1"}, "after": {"id": 1, "email": "email-6", "note": "note-1"}}
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_update_open); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_update_open))
+  note: seeded 5 rows
+public.lab_using_true
+  READ: EXPOSED - anon read 5 row(s)
+    evidence: {"rows_read": 5, "row": {"id": 1, "email": "email-1", "note": "note-1"}}
+  INSERT: protected (12 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "lab_using_true"; row-level security refuses the new row (anon has no INSERT policy on lab_using_true)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_using_true); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_using_true))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_using_true); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_using_true))
+  note: seeded 5 rows
+public.lab_value_policy
+  READ: protected - anon read 0 rows
+  INSERT: EXPOSED - anon inserted a row (HTTP 201), row 2 of the value search, with status = "pending" from the insert policy's constants
+    evidence: {"row": {"id": 8, "email": "email-6", "status": "pending"}, "source": "policy"}
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_value_policy); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on lab_value_policy))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_value_policy); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_value_policy))
+  note: seeded 5 rows
+
+9 exposed operation(s) in 8 table(s).
+[exit 1]
+
+docker run calls made by that run:
+  docker run -d --rm --name rlsentry-235b11f8bb38-db --label rlsentry.run=235b11f8bb38 --label rlsentry.owner=vm/125/1653880 -p 127.0.0.1:37559:5432 -p 127.0.0.1:57853:3000 --tmpfs /var/lib/postgresql/data -e POSTGRES_USER=supabase_admin -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16 -c search_path="$user", public, extensions -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c logging_collector=on -c log_destination=jsonlog -c log_directory=log -c log_rotation_age=0 -c log_rotation_size=0 -c log_error_verbosity=verbose -c shared_preload_libraries=auto_explain
+  docker run -d --rm --name rlsentry-235b11f8bb38-rest --label rlsentry.run=235b11f8bb38 --label rlsentry.owner=vm/125/1653880 --network container:rlsentry-235b11f8bb38-db -e PGRST_DB_URI -e PGRST_DB_SCHEMAS -e PGRST_DB_EXTRA_SEARCH_PATH -e PGRST_DB_ANON_ROLE -e PGRST_JWT_SECRET -e PGRST_LOG_LEVEL -e PGRST_SERVER_PORT postgrest/postgrest:v12.2.3
+$ docker ps -a --filter label=rlsentry.run
+[exit 0]
+
+$ docker volume ls
+[exit 0]
+
+### images not present, and Docker Hub answers 429
+$ rlsentry attack --migrations tests/fixtures/clean
+rlsentry: docker unavailable (cannot pull postgres:16: Error response from daemon: toomanyrequests: You have reached your pull rate limit.); using the local backend
+rlsentry 0.1.0 attack on tests/fixtures/clean (2026-11-24T18:09:16+00:00)
+
+public.profiles
+  READ: protected - anon read 0 rows
+  INSERT: protected (6 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "profiles"; row-level security refuses the new row (anon has no INSERT policy on profiles)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on profiles); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on profiles))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on profiles); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on profiles))
+  note: seeded 5 rows
+
+0 exposed operation(s) in 1 table(s).
+[exit 0]
+
+$ rlsentry attack --backend docker --migrations tests/fixtures/clean
+rlsentry: could not build or attack the copy: docker backend: cannot pull postgres:16: Error response from daemon: toomanyrequests: You have reached your pull rate limit.
+[exit 2]
+
+$ rlsentry attack --backend docker --migrations tests/fixtures/clean
+rlsentry: could not build or attack the copy: docker run rlsentry-c1e011ebb9e1-rest failed: docker: Error response from daemon: driver failed programming external connectivity.
+[exit 2]
+
+$ docker ps -a --filter label=rlsentry.run
+[exit 0]
+
+$ docker volume ls
+[exit 0]
+

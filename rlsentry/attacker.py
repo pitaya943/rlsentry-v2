@@ -1,9 +1,11 @@
 """Every attacking request, made as anon through an AnonChannel, and the verdicts.
 
-`protected` is a verdict only when row-level security (or a missing grant) answered: a 2xx
-that changed nothing, or 42501. Any other refusal (a CHECK, a unique key, a foreign key)
-comes after the policies let the row through, so it is no answer about them: the attacker
-clears the way and tries again where it can, and otherwise stops the run (exit 2).
+`protected` is a verdict only when row-level security (or a missing grant) answered. A write's
+refusal (42501, or a 2xx that changed nothing) is RLS's only if PostgreSQL's own account of that
+request says so (`Inspector.rls_refusal`); the error PostgREST returns never does, as the
+table's own code can raise any error. Any other refusal (a CHECK,
+a unique key, a foreign key) is no answer about the policies: the attacker clears the way and
+tries again where it can, and otherwise stops the run (exit 2).
 """
 
 from __future__ import annotations
@@ -72,8 +74,9 @@ class Attacker:
                 return OpResult(Op.INSERT, Outcome.EXPOSED, basis, evidence, tries=tried)
             if str(_code(resp)).startswith("22") and not self._db.holds(table, row):
                 continue  # a value the column cannot hold (too long, say): no row, no answer
-            if self._rls_answered(table, Op.INSERT, resp, row, None):
-                last = _answer(resp)
+            reason = self._rls_answered(table, Op.INSERT, "POST", resp, row, None)
+            if reason:
+                last = f"{_answer(resp)}; {reason}"
             else:
                 unclean.append(_answer(resp))
         if unclean or not last:  # protected rests on at least one answer from RLS itself
@@ -121,7 +124,9 @@ class Attacker:
                 gone, new = _missing(before, after), _missing(after, before)
                 if gone:
                     return self._changed(op, method, how, key, gone, new, detached, len(answers))
-                if self._rls_answered(table, op, resp, body, target):
+                reason = self._rls_answered(table, op, method, resp, body, target)
+                if reason:
+                    answers[-1] += f", {reason}"
                     break
                 unclean.append(answers[-1])
         if unclean:
@@ -146,18 +151,16 @@ class Attacker:
                         "deleted": {k: gone[0][k] for k in key} if key else gone[0]}
         return OpResult(op, Outcome.EXPOSED, basis, evidence, tries=tries)
 
-    def _rls_answered(self, table: str, op: Op, resp, values, target) -> bool:
-        """Was this write's refusal (42501, or a 2xx that changed nothing) row-level security's
-        or a missing grant's? A trigger can raise 42501, even with RLS's own message, or skip
-        a row. So the sandbox sends the same write as anon with the table's triggers off,
-        rolled back: only if that is refused the same way is it RLS's answer."""
-        if _refused(resp):
-            state, _ = self._db.as_anon(table, op.value, values, target)
-            return state == "42501"
-        if 200 <= resp.status < 300 and op is not Op.INSERT:
-            state, changed = self._db.as_anon(table, op.value, values, target)
-            return state in (None, "42501") and changed == 0
-        return False
+    def _rls_answered(self, table: str, op: Op, method: str, resp, values, target) -> str | None:
+        """Why row-level security (or a missing grant) refused this write, or None if it did
+        not: a 42501, or a 2xx that changed nothing, is RLS's only if PostgreSQL says so for
+        this very request."""
+        if _refused(resp) or (200 <= resp.status < 300 and op is not Op.INSERT):
+            return self._db.rls_refusal(op.value, table, values, target,
+                                        self._channel.settings(method, table, values,
+                                                               resp.request_id),
+                                        resp.request_id)
+        return None
 
     def _post(self, table: str, row: dict):
         """POST a row. On a unique violation (the policy let the row through; a seeded row holds

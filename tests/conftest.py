@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,37 @@ from pathlib import Path
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
+# The backend for runs whose test names none: `pytest --rlsentry-backend docker` runs them on
+# tests/fakedocker.py (one stand-in daemon for the session) instead of the local backend.
+BACKEND = "local"
+
+
+def pytest_addoption(parser):
+    parser.addoption("--rlsentry-backend", choices=("local", "docker"), default="local",
+                     help="backend for the runs a test does not give one (docker: tests/fakedocker.py)")
+
+
+def pytest_configure(config):
+    global BACKEND
+    BACKEND = config.getoption("--rlsentry-backend")
+    if BACKEND == "docker":
+        root = Path(tempfile.mkdtemp(prefix="fakedocker-session-"))
+        config.add_cleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        docker_dir, bin_dir = install_fake_docker(root)
+        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+        os.environ["FAKE_DOCKER_DIR"] = str(docker_dir)
+        os.environ.pop("DOCKER_HOST", None)
+        os.environ.pop("FAKE_DOCKER_FAIL", None)
+
+
+def install_fake_docker(root):
+    """tests/fakedocker.py as `docker` in root/bin, its state in root/docker."""
+    (root / "docker").mkdir()
+    (root / "bin").mkdir()
+    cli = root / "bin" / "docker"
+    cli.write_text(f'#!/bin/sh\nexec {sys.executable} {Path(__file__).parent / "fakedocker.py"} "$@"\n')
+    cli.chmod(0o755)
+    return root / "docker", root / "bin"
 
 
 @pytest.fixture
@@ -18,11 +50,11 @@ def state_dir(tmp_path):
 
 
 def rlsentry(*args, state_dir, **kw):
-    """Start `rlsentry` as a separate process with its own state dir; on the local backend
-    unless the arguments name one (the tests that look for its processes need it)."""
+    """Start `rlsentry` as a separate process with its own state dir; on BACKEND (local unless
+    pytest is told otherwise) unless the arguments name one."""
     env = dict(os.environ, RLSENTRY_STATE_DIR=str(state_dir))
     if args[:1] == ("attack",) and "--backend" not in args:
-        args = ("attack", "--backend", "local", *args[1:])
+        args = ("attack", "--backend", BACKEND, *args[1:])
     return subprocess.Popen([sys.executable, "-m", "rlsentry", *args], env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kw)
 
@@ -73,13 +105,7 @@ class FakeDocker:
     """tests/fakedocker.py as `docker` on PATH (see its docstring)."""
 
     def __init__(self, root, monkeypatch):
-        self.dir = root / "docker"
-        self.dir.mkdir()
-        bin_dir = root / "bin"
-        bin_dir.mkdir()
-        cli = bin_dir / "docker"
-        cli.write_text(f'#!/bin/sh\nexec {sys.executable} {Path(__file__).parent / "fakedocker.py"} "$@"\n')
-        cli.chmod(0o755)
+        self.dir, bin_dir = install_fake_docker(root)
         self._monkeypatch = monkeypatch
         monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
         monkeypatch.setenv("FAKE_DOCKER_DIR", str(self.dir))

@@ -1,0 +1,65 @@
+# PR #6 verdict cases (D7, D8) driven through the CLI at the T-06 head, venv with pip install -e .
+
+$ rlsentry attack --migrations c42
+rlsentry: could not build or attack the copy: inbox: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 401 42501: note must be magic)
+exit=2
+
+$ rlsentry attack --migrations c42proof
+public.inbox
+  INSERT: EXPOSED - anon inserted a row (HTTP 201), row 2 of the value search, with note = "magic" from the CHECK constraints
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on inbox); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on inbox))
+1 exposed operation(s) in 1 table(s).
+exit=1
+
+$ rlsentry attack --migrations d42
+rlsentry: could not build or attack the copy: inbox: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 401 42501: note must be magic)
+exit=2
+
+$ rlsentry attack --migrations a42
+rlsentry: could not build or attack the copy: inbox: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 401 42501: note must be magic)
+exit=2
+
+$ rlsentry attack --migrations a42proof
+public.inbox
+  INSERT: EXPOSED - anon inserted a row (HTTP 201), row 2 of the value search, with note = "magic" from the CHECK constraints
+  UPDATE: EXPOSED - anon changed 5 row(s) with PATCH without a filter (confirmed as superuser)
+3 exposed operation(s) in 1 table(s).
+exit=1
+
+$ rlsentry attack --migrations r42
+rlsentry: could not build or attack the copy: inbox: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 401 42501: note must be magic)
+exit=2
+
+$ rlsentry attack --migrations r42proof
+public.inbox
+  INSERT: EXPOSED - anon inserted a row (HTTP 201), row 2 of the value search, with note = "magic" from the CHECK constraints
+  UPDATE: EXPOSED - anon changed 5 row(s) with PATCH without a filter (confirmed as superuser)
+3 exposed operation(s) in 1 table(s).
+exit=1
+
+$ rlsentry attack --migrations uc42
+rlsentry: could not build or attack the copy: inbox: UPDATE got no answer from row-level security, so it is neither exposed nor protected (PATCH by primary key: HTTP 401 42501: note must be magic)
+exit=2
+
+$ rlsentry attack --migrations fp1
+public.posts
+  INSERT: protected (9 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "posts"; row-level security refuses the new row (refused by anon's INSERT policies on posts: "drafts only")
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on posts); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on posts))
+0 exposed operation(s) in 1 table(s).
+exit=0
+
+$ rlsentry attack --migrations fp2
+  INSERT: protected (12 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "audit"; row-level security refuses the new row (anon has no INSERT policy on audit)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on audit); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on audit))
+public.posts
+  INSERT: protected (7 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "audit"; row-level security on table "audit" refuses the row posts writes there (anon has no INSERT policy on audit)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on posts); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on posts))
+0 exposed operation(s) in 2 table(s).
+exit=0
+
+$ rlsentry attack --migrations some-rows
+public.m
+  INSERT: protected (7 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "m"; row-level security refuses the new row (anon has no INSERT policy on m)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no SELECT policy on m); PATCH without a filter: HTTP 401 42501: new row violates row-level security policy for table "m", row-level security refuses 2 of the 5 new rows (refused by anon's UPDATE policies on m: "u"))
+0 exposed operation(s) in 1 table(s).
+exit=0

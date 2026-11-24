@@ -1,0 +1,249 @@
+# T-06 merged with T-05 (task/anon-probe at d4efd93). mutants.py in this directory: each mutant an
+# edit on a throwaway `git worktree` of HEAD (never the checkout), the full suite without -x under
+# T-03's iso.sh (T05-23 with -x, as T-05 ran it), every failing test labelled assert or crash as in
+# fix round 3. Fix round 3's mutants come from ../T-06-fix3-mutants (and ../T-06-fix2-mutants) by
+# id; T-05's from ../T-05-mutants by number (T05-NN); G1-G4 are this merge's own.
+# The suite now holds 236 tests (235 + the real-daemon test, skipped: no Docker daemon here).
+# Run 1 at 68f1142 (the merge commit); run 2 at the final head, after the no-log test was changed
+# to assert on the verdict (G1 had killed it by "DID NOT RAISE", which the labeller calls a crash).
+# T05-17's 4 failures carry spaces in their ids, which the labeller does not parse: they are
+# test_guard/test_docker ..._refused_when_the_nonce_is_not_ours[update ...|delete ...], by assert.
+
+## Run 1 (68f1142)
+none none (sanity: the unmutated copy passes)
+     235 passed, 1 skipped in 276.92s (0:04:36)   assert 0 crash 0
+G1 G1 no server log: the oracle's own reading taken as PostgreSQL's
+     2 failed, 233 passed, 1 skipped in 276.40s (0:04:36)   assert 0 crash 2
+       crash   test_without_the_servers_log_no_write_is_protected[local]
+       crash   test_without_the_servers_log_no_write_is_protected[docker]
+G2 G2 the server's log never read
+     99 failed, 117 passed, 1 skipped, 19 errors in 236.99s (0:03:56)   assert 92 crash 7
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       assert  test_auto_falls_back_to_local_when_there_is_no_docker_cli
+       ... 93 more
+G3 G3 the logging settings not given to the backend
+     98 failed, 118 passed, 1 skipped, 19 errors in 235.36s (0:03:55)   assert 91 crash 7
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       assert  test_auto_falls_back_to_local_when_there_is_no_docker_cli
+       ... 92 more
+G4 G4 the offset read so far not kept
+     16 failed, 219 passed, 1 skipped in 302.51s (0:05:02)   assert 8 crash 8
+       assert  test_auto_uses_docker_when_it_can_run
+       assert  test_attack_requests_ignore_proxy_environment_variables
+       assert  test_lab_verdicts_match_expected
+       crash   test_exposed_read_shows_count_and_a_seeded_row[lab_rls_off]
+       crash   test_exposed_read_shows_count_and_a_seeded_row[lab_using_true]
+       crash   test_protected_read_has_no_evidence
+       ... 10 more
+T05-07 T05-07 no startup sweep (any backend)
+     3 failed, 232 passed, 1 skipped in 277.87s (0:04:37)   assert 3 crash 0
+       assert  test_next_docker_run_sweeps_a_killed_run
+       assert  test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+       assert  test_next_run_sweeps_a_killed_run
+T05-12 T05-12 no teardown when the build fails
+     24 failed, 211 passed, 1 skipped in 277.08s (0:04:37)   assert 14 crash 0
+       assert  test_docker_migration_failure_exits_2_and_leaves_no_container
+       assert  test_signal_while_docker_run_is_in_flight_leaves_no_container
+       assert  test_docker_run_cut_off_by_its_timeout_leaves_no_container
+       assert  test_migration_cannot_reach_the_host[lo_export]
+       assert  test_migration_cannot_reach_the_host[pg_read_file]
+       assert  test_unsupported_migration_names_file_line_and_missing_object[broken-002_broken.sql-named0]
+       ... 8 more
+T05-17 T05-17 nonce not checked
+     4 failed, 231 passed, 1 skipped in 284.37s (0:04:44)   assert 0 crash 0
+T05-22 T05-22 docker cluster ignores the sandbox's superuser
+     15 failed, 217 passed, 1 skipped, 3 errors in 1312.25s (0:21:52)   assert 11 crash 3
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       assert  test_auto_uses_docker_when_it_can_run
+       assert  test_teardown_looks_again_when_docker_rm_fails
+       assert  test_docker_migration_failure_exits_2_and_leaves_no_container
+       assert  test_signal_mid_run_on_docker_leaves_no_container[2]
+       ... 8 more
+T05-23 T05-23 local cluster ignores the sandbox's superuser
+     1 failed, 2 passed in 65.47s (0:01:05) (stopped at the first failure: -x)   assert 1 crash 0
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+T05-24 T05-24 data directory not a tmpfs (an anonymous volume per run)
+     12 failed, 223 passed, 1 skipped in 286.93s (0:04:46)   assert 10 crash 0
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_teardown_looks_again_when_docker_rm_fails
+       assert  test_docker_migration_failure_exits_2_and_leaves_no_container
+       assert  test_signal_mid_run_on_docker_leaves_no_container[2]
+       assert  test_signal_mid_run_on_docker_leaves_no_container[15]
+       assert  test_signal_while_docker_run_is_in_flight_leaves_no_container
+       ... 4 more
+R1 R1 the oracle's no answer not checked
+     2 failed, 233 passed, 1 skipped in 287.33s (0:04:47)   assert 0 crash 2
+       crash   test_an_update_rls_refuses_on_its_first_row_and_other_code_on_a_later_one_is_not_protected
+       crash   test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls
+R1b R1b the oracle's no answer read as agreeing with PostgreSQL's
+     2 failed, 233 passed, 1 skipped in 280.56s (0:04:40)   assert 2 crash 0
+       assert  test_an_update_rls_refuses_on_its_first_row_and_other_code_on_a_later_one_is_not_protected
+       assert  test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls
+R3 R3 the two answers need not agree (fix 1's M02)
+     1 failed, 234 passed, 1 skipped in 278.85s (0:04:38)   assert 1 crash 0
+       assert  test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected
+R4 R4 only the kind compared, not the table (verdict V8)
+     1 failed, 234 passed, 1 skipped in 275.59s (0:04:35)   assert 1 crash 0
+       assert  test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected
+S2 S2 errors read only as ERROR severity: none read
+     88 failed, 128 passed, 1 skipped, 19 errors in 238.42s (0:03:58)   assert 81 crash 7
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       assert  test_auto_falls_back_to_local_when_there_is_no_docker_cli
+       ... 82 more
+S7 S7 check: the C function not checked (verdict V2)
+     1 failed, 234 passed, 1 skipped in 277.38s (0:04:37)   assert 1 crash 0
+       assert  test_d2_a_policy_elsewhere_true_inside_the_trigger_is_never_protected[forged]
+S10 S10 check: top level or nested not checked (verdict V1)
+     2 failed, 233 passed, 1 skipped in 278.50s (0:04:38)   assert 2 crash 0
+       assert  test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user-nested]
+       assert  test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[current_query-nested]
+S14 S14 every entry read as a plan
+     97 failed, 119 passed, 1 skipped, 19 errors in 255.56s (0:04:15)   assert 1 crash 96
+       crash   test_lab_on_docker_matches_expected_and_leaves_no_container
+       crash   test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       crash   test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       crash   test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       crash   test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       crash   test_auto_falls_back_to_local_when_there_is_no_docker_cli
+       ... 91 more
+S14b S14b every entry read as a plan, without the crash on one that is not
+     4 failed, 231 passed, 1 skipped in 286.83s (0:04:46)   assert 4 crash 0
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule-forged-plan]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-rule-forged-plan]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-rule-forged-plan]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-rule-forged-plan]
+S15 S15 any plan node, not the write
+     89 failed, 127 passed, 1 skipped, 19 errors in 266.93s (0:04:26)   assert 82 crash 7
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       assert  test_auto_falls_back_to_local_when_there_is_no_docker_cli
+       ... 83 more
+S16 S16 any schema's table of that name (verdict V6, D3)
+     4 failed, 231 passed, 1 skipped in 295.81s (0:04:55)   assert 4 crash 0
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule-other-schema]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-rule-other-schema]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-rule-other-schema]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-rule-other-schema]
+S17 S17 any table's write (fix 1's M06)
+     8 failed, 227 passed, 1 skipped in 289.70s (0:04:49)   assert 8 crash 0
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule-forged-plan]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-rule]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-rule-forged-plan]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-rule]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-rule-forged-plan]
+       ... 2 more
+S20 S20 the write's operation not checked
+     4 failed, 231 passed, 1 skipped in 293.03s (0:04:53)   assert 4 crash 0
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule-other-op]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-rule-other-op]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-rule-other-op]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-rule-other-op]
+S21 S21 every child of the write, not only its source
+     4 failed, 231 passed, 1 skipped in 281.55s (0:04:41)   assert 2 crash 2
+       assert  test_what_built_as_superuser_still_builds[supabase_app]
+       assert  test_supabase_app_builds_and_every_table_is_seeded_in_full
+       crash   test_policies_see_anon_through_auth_role_jwt_and_uid
+       crash   test_seeded_row_honours_enum_check_and_auth_users_key
+S21b S21b every child of the write, the first read
+     4 failed, 231 passed, 1 skipped in 277.84s (0:04:37)   assert 2 crash 2
+       assert  test_what_built_as_superuser_still_builds[supabase_app]
+       assert  test_supabase_app_builds_and_every_table_is_seeded_in_full
+       crash   test_policies_see_anon_through_auth_role_jwt_and_uid
+       crash   test_seeded_row_honours_enum_check_and_auth_users_key
+S24 S24 the source's rows not read (fix 1's M05)
+     4 failed, 231 passed, 1 skipped in 277.07s (0:04:37)   assert 4 crash 0
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-trigger-skips]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-trigger-skips]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-trigger-skips]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-trigger-skips]
+L5 L5 the naming entry: the request id not matched (verdict V4)
+     98 failed, 118 passed, 1 skipped, 19 errors in 244.98s (0:04:04)   assert 91 crash 7
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       assert  test_auto_falls_back_to_local_when_there_is_no_docker_cli
+       ... 92 more
+L8 L8 the request's entries: any transaction (fix 1's M07)
+     36 failed, 180 passed, 1 skipped, 19 errors in 278.65s (0:04:38)   assert 31 crash 5
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_attack_requests_ignore_proxy_environment_variables
+       assert  test_what_built_as_superuser_still_builds[ext_unqualified]
+       assert  test_lab_verdicts_match_expected
+       crash   test_exposed_read_shows_count_and_a_seeded_row[lab_rls_off]
+       crash   test_exposed_read_shows_count_and_a_seeded_row[lab_using_true]
+       ... 30 more
+L9 L9 the request's entries: by session, not transaction (fix 1's M08)
+     20 failed, 208 passed, 1 skipped, 7 errors in 280.80s (0:04:40)   assert 20 crash 0
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_what_built_as_superuser_still_builds[ext_unqualified]
+       assert  test_extensions_on_the_search_path_of_seeding_and_postgrest
+       assert  test_update_avoids_a_unique_column_that_would_collide
+       assert  test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user-forged]
+       assert  test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user-nested]
+       ... 14 more
+L12 L12 the log read without waiting for the sync line (verdict V9)
+     7 failed, 228 passed, 1 skipped in 280.03s (0:04:40)   assert 3 crash 4
+       assert  test_lab_verdicts_match_expected
+       crash   test_exposed_read_shows_count_and_a_seeded_row[lab_rls_off]
+       crash   test_exposed_read_shows_count_and_a_seeded_row[lab_using_true]
+       crash   test_protected_read_has_no_evidence
+       crash   test_json_report_matches_schema
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-rule]
+       ... 1 more
+A1 A1 a 42501 is never asked about
+     87 failed, 129 passed, 1 skipped, 19 errors in 232.65s (0:03:52)   assert 80 crash 7
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       assert  test_auto_falls_back_to_local_when_there_is_no_docker_cli
+       ... 81 more
+A2 A2 a 2xx that changed nothing is never asked about (fix 1's v6a)
+     90 failed, 126 passed, 1 skipped, 19 errors in 253.82s (0:04:13)   assert 83 crash 7
+       assert  test_lab_on_docker_matches_expected_and_leaves_no_container
+       assert  test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       assert  test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       assert  test_auto_falls_back_to_local_when_there_is_no_docker_cli
+       ... 84 more
+E1 E1 no target row is not checked (verdict V10)
+     1 failed, 234 passed, 1 skipped in 277.47s (0:04:37)   assert 1 crash 0
+       assert  test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls
+X1 X1 a plan is any entry with a plan in its message (verdict D4)
+     4 failed, 231 passed, 1 skipped in 274.04s (0:04:34)   assert 4 crash 0
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule-forged-plan]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-rule-forged-plan]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-rule-forged-plan]
+       assert  test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-rule-forged-plan]
+N1 N1 auto_explain logs nested statements too (S18/S19's reason)
+     1 failed, 234 passed, 1 skipped in 280.69s (0:04:40)   assert 1 crash 0
+       assert  test_the_requests_plan_holds_only_its_own_statements_write
+
+## Run 2 (final head)
+none none (sanity: the unmutated copy passes)
+     235 passed, 1 skipped in 281.35s (0:04:41)   assert 0 crash 0
+G1 G1 no server log: the oracle's own reading taken as PostgreSQL's
+     2 failed, 233 passed, 1 skipped in 281.89s (0:04:41)   assert 2 crash 0
+       assert  test_without_the_servers_log_no_write_is_protected[local]
+       assert  test_without_the_servers_log_no_write_is_protected[docker]

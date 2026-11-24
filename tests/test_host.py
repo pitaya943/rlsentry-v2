@@ -168,17 +168,22 @@ create domain public.word as text check (public.ok(value));
 create table public.d (id bigint generated always as identity primary key, w public.word,
                        code varchar(3), check (w is distinct from 'x'));
 create unique index d_w_key on public.d (w);
+alter table public.d enable row level security;
+create policy p on public.d to anon using (public.ok(w)) with check (public.ok(w));
 """))
 
 
-def _uses_of_the_column_type(db):
-    """Every Inspector call that casts a value to the domain (and so runs its CHECK)."""
+def _uses_of_the_column_type(db, settings):
+    """Every Inspector call that casts a value to the domain (and so runs its CHECK), or
+    evaluates d's policy, which calls the same function."""
     return {
         "holds": lambda: db.holds("d", {"w": "a", "code": "ab"}),
         "value_sources (_fits)": lambda: db.value_sources("d"),  # the CHECK's 'x' as a word
         "would_change": lambda: db.would_change("d", "w", "b", None),
         "fake_row": lambda: db.fake_row("d"),  # a trial insert: d has a CHECK
-        "as_anon": lambda: db.as_anon("d", "INSERT", {"w": "c"}, None),
+        "rls_refusal INSERT": lambda: db.rls_refusal("INSERT", "d", {"w": "c"}, None, settings, None),
+        "rls_refusal UPDATE": lambda: db.rls_refusal("UPDATE", "d", {"w": "c"}, None, settings, None),
+        "rls_refusal DELETE": lambda: db.rls_refusal("DELETE", "d", None, None, settings, None),
         "make_room": lambda: db.make_room("d", "d_w_key", {"w": "a"}),
     }
 
@@ -186,7 +191,8 @@ def _uses_of_the_column_type(db):
 def test_inspector_runs_migration_code_only_as_postgres(tmp_path, monkeypatch, victim_dir):
     with _domain_sandbox(tmp_path, monkeypatch, victim_dir) as sb:
         db = sb.inspector()
-        for name, use in _uses_of_the_column_type(db).items():
+        settings = sb.anon_channel().settings("POST", "d", {"w": "c"}, "0")
+        for name, use in _uses_of_the_column_type(db, settings).items():
             calls = sb._conn.execute("select count(*) from public.calls").fetchone()[0]
             use()
             assert list(victim_dir.iterdir()) == [], name
@@ -196,17 +202,21 @@ def test_inspector_runs_migration_code_only_as_postgres(tmp_path, monkeypatch, v
                     == calls, name
 
 
+@pytest.mark.parametrize("use, answer", [
+    (lambda db: db.holds("d", {"w": "loop"}), False),
+    # the oracle: the policy calls ok(), so evaluating it never returns either
+    (lambda db: db.rls_refusal("INSERT", "d", {"w": "loop"}, None, {}, None), None),
+], ids=["holds", "rls_refusal"])
 def test_a_migration_function_that_never_returns_cannot_hang_the_run(tmp_path, monkeypatch,
-                                                                     victim_dir):
+                                                                     victim_dir, use, answer):
     import threading
 
     import rlsentry.sandbox
     monkeypatch.setattr(rlsentry.sandbox, "STATEMENT_TIMEOUT", "1s")
     with _domain_sandbox(tmp_path, monkeypatch, victim_dir) as sb:
         db, result = sb.inspector(), []
-        worker = threading.Thread(target=lambda: result.append(db.holds("d", {"w": "loop"})),
-                                  daemon=True)
+        worker = threading.Thread(target=lambda: result.append(use(db)), daemon=True)
         worker.start()
         worker.join(15)
-        assert not worker.is_alive(), "holds() still running: no statement timeout"
-        assert result == [False]
+        assert not worker.is_alive(), "still running: no statement timeout"
+        assert result == [answer]

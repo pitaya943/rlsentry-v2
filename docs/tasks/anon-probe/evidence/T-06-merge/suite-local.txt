@@ -1,0 +1,7 @@
+# Full suite on the merged code under T-03's iso.sh, local backend (the default): the tree committed as 68f1142, before conftest removed its session fake-docker dir
+$ iso.sh python3 -m pytest -q -p no:cacheprovider
+....................                                                     [100%]
+235 passed, 1 skipped in 278.90s (0:04:38)
+exit 0
+
+# At the final head: the 'none' row of mutants.txt (a git worktree of HEAD, same command): 235 passed, 1 skipped
