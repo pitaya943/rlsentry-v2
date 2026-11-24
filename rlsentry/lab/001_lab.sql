@@ -52,6 +52,17 @@ create table lab_delete_open (
 alter table lab_delete_open enable row level security;
 create policy "anyone can delete" on lab_delete_open for delete to anon using (true);
 
+-- Anon may add rows, but only pending ones. A row as a form would send it (status left to its
+-- default) is refused, so the table looks closed until a row with status 'pending' is tried.
+create table lab_value_policy (
+  id bigint generated always as identity primary key,
+  email text not null,
+  status text not null default 'draft'
+);
+alter table lab_value_policy enable row level security;
+create policy "pending sign-ups only" on lab_value_policy for insert to anon
+  with check (status = 'pending');
+
 -- Done right: every policy checks the row's owner. Anon has no user id, so nothing passes.
 create table lab_owner_only (
   id bigint generated always as identity primary key,

@@ -1,0 +1,14 @@
+# New tests/test_host.py against 5bab3db (base: migrations run as the cluster superuser), isolated (iso.sh). Two later tests (restore trigger, what Supabase's postgres role may do) were added after this run; their failing mutants are in T-04-mutants.
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[copy to program]
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[copy to file]
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[copy from program]
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[copy from file]
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[lo_export] - ...
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[pg_read_file]
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[grant itself program rights]
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[become superuser]
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[untrusted extension]
+FAILED tests/test_host.py::test_migration_cannot_reach_the_host[file_fdw program]
+FAILED tests/test_host.py::test_trigger_fired_while_seeding_cannot_reach_the_host
+FAILED tests/test_host.py::test_function_shadowing_a_builtin_is_never_called_by_rlsentry
+12 failed, 6 passed in 25.53s

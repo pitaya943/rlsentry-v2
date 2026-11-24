@@ -40,6 +40,17 @@ step 2 rlsentry attack --migrations "$fixtures/unseedable_point"
 
 step 2 rlsentry attack --target https://x.supabase.co
 
+victim="$(mktemp -d)"; chmod 777 "$victim"  # writable by the server's OS user: only privileges stop it
+mkdir "$work/host"
+cat > "$work/host/001_host.sql" <<SQL
+create table t (id bigint generated always as identity primary key);
+copy (select 1) to program 'touch $victim/pwned';
+SQL
+step 2 rlsentry attack --migrations "$work/host"
+if [ -e "$victim/pwned" ]; then echo "FAIL: a migration reached the host" | tee -a "$log"; fail=1
+else echo "host untouched: $victim/pwned does not exist" >> "$log"; fi
+rm -rf "$victim"
+
 mkdir "$work/slow"
 cat > "$work/slow/001_slow.sql" <<'SQL'
 create table slow (id bigint generated always as identity primary key, note text);
