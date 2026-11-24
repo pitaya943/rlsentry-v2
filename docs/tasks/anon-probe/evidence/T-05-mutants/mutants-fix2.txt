@@ -1,0 +1,141 @@
+# T-05 fix round 2, after merging task/anon-probe (T-04): python3 docs/tasks/anon-probe/evidence/T-05-mutants/mutants.py, each mutant in a throwaway git worktree of HEAD, full suite under iso.sh, one mutant at a time.
+# Batches: M01-M13 and M14-M22 on ab05855's code (+ runner e2d7099); M23-M37 on 3f2c72c's code (same product code). M29, M30, M31 are the verifier's B11, B12, B07.
+# M23 and M34 stop at their first failing test (-x): under them every test waits out a timeout.
+# M23 first ran without -x and passed its 3600 s runner timeout; it was rerun with -x.
+M01 db port published on every interface
+     13 failed, 136 passed, 1 skipped, 3 errors in 364.71s (0:06:04)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+M02 REST port published on every interface
+     13 failed, 136 passed, 1 skipped, 3 errors in 360.75s (0:06:00)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+M03 no --rm
+     2 failed, 150 passed, 1 skipped in 136.57s (0:02:16)
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[db-exits-postgres
+M04 no run label
+     14 failed, 138 passed, 1 skipped in 151.99s (0:02:31)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+M05 postgres image not pinned
+     15 failed, 134 passed, 1 skipped, 3 errors in 1114.24s (0:18:34)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[pull-cannot
+M06 postgrest image not pinned
+     9 failed, 140 passed, 1 skipped, 3 errors in 859.21s (0:14:19)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+M07 no startup sweep (any backend)
+     3 failed, 149 passed, 1 skipped in 144.40s (0:02:24)
+       tests/test_docker.py::test_next_docker_run_sweeps_a_killed_run
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+       tests/test_teardown.py::test_next_run_sweeps_a_killed_run
+M08 docker sweep removes nothing
+     2 failed, 150 passed, 1 skipped in 149.66s (0:02:29)
+       tests/test_docker.py::test_next_docker_run_sweeps_a_killed_run
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+M09 sweep removes live runs' containers too
+     1 failed, 151 passed, 1 skipped in 200.83s (0:03:20)
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+M10 sweep: a reused pid counts as the owner
+     1 failed, 151 passed, 1 skipped in 144.91s (0:02:24)
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+M11 teardown removes nothing
+     13 failed, 139 passed, 1 skipped in 334.49s (0:05:34)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+       tests/test_docker.py::test_teardown_looks_again_when_docker_rm_fails
+M12 no teardown when the build fails
+     24 failed, 128 passed, 1 skipped in 145.68s (0:02:25)
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+       tests/test_docker.py::test_docker_migration_failure_exits_2_and_leaves_no_container
+       tests/test_docker.py::test_signal_while_docker_run_is_in_flight_leaves_no_container
+M13 auto does not fall back
+     6 failed, 146 passed, 1 skipped in 144.78s (0:02:24)
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       tests/test_docker.py::test_auto_falls_back_to_local_when_there_is_no_docker_cli
+M14 daemon absence not detected
+M15 remote daemon accepted
+M16 pull failure not detected
+M17 nonce not checked
+M18 docker alive() always true
+M19 published ports not checked
+M20 JWT secret on the command line
+M21 a cut-off docker run is not waited for
+M22 docker cluster ignores the sandbox's superuser
+M23 local cluster ignores the sandbox's superuser
+     1 failed, 2 passed in 65.94s (0:01:05) (stopped at the first failure: -x)
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
+M24 data directory not a tmpfs (an anonymous volume per run)
+     12 failed, 140 passed, 1 skipped in 146.78s (0:02:26)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+       tests/test_docker.py::test_teardown_looks_again_when_docker_rm_fails
+M25 teardown that cannot reach the daemon says nothing
+     1 failed, 151 passed, 1 skipped in 154.40s (0:02:34)
+       tests/test_docker.py::test_teardown_that_cannot_reach_the_daemon_says_so
+M26 log of a gone container is silently empty
+     2 failed, 150 passed, 1 skipped in 157.28s (0:02:37)
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[db-exits-postgres
+       tests/test_docker.py::test_log_tail_says_why_there_is_no_log
+M27 teardown looks once: no wait for a cut-off docker run
+     2 failed, 150 passed, 1 skipped in 151.89s (0:02:31)
+       tests/test_docker.py::test_signal_while_docker_run_is_in_flight_leaves_no_container
+       tests/test_docker.py::test_docker_run_cut_off_by_its_timeout_leaves_no_container
+M28 teardown looks once: never looks again after rm
+     1 failed, 151 passed, 1 skipped in 157.85s (0:02:37)
+       tests/test_docker.py::test_teardown_looks_again_when_docker_rm_fails
+M29 teardown rm without -f (verifier B11)
+     13 failed, 139 passed, 1 skipped in 340.89s (0:05:40)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
+       tests/test_docker.py::test_teardown_looks_again_when_docker_rm_fails
+M30 sweep rm without -f (verifier B12)
+     2 failed, 150 passed, 1 skipped in 153.30s (0:02:33)
+       tests/test_docker.py::test_next_docker_run_sweeps_a_killed_run
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+M31 a container once seen stays unsettled (verifier B07)
+     2 failed, 150 passed, 1 skipped in 171.32s (0:02:51)
+       tests/test_docker.py::test_signal_while_docker_run_is_in_flight_leaves_no_container
+       tests/test_docker.py::test_docker_run_cut_off_by_its_timeout_leaves_no_container
+M32 teardown ps without -a
+     1 failed, 151 passed, 1 skipped in 156.68s (0:02:36)
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+M33 sweep ps without -a
+     1 failed, 151 passed, 1 skipped in 159.53s (0:02:39)
+       tests/test_docker.py::test_sweep_spares_live_runs_other_hosts_and_unlabelled_containers
+M34 docker run without -d
+     1 failed in 120.70s (0:02:00) (stopped at the first failure: -x)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+M35 context inspect without the endpoint template
+     18 failed, 131 passed, 1 skipped, 3 errors in 386.69s (0:06:26)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[pull-cannot
+M36 inspect without the State.Running template
+     12 failed, 137 passed, 1 skipped, 3 errors in 378.12s (0:06:18)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
+M37 log_tail: an unreachable daemon reads as a gone container
+     1 failed, 151 passed, 1 skipped in 152.09s (0:02:32)
+       tests/test_docker.py::test_log_tail_says_why_there_is_no_log
