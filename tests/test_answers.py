@@ -218,7 +218,7 @@ def test_a_read_verdict_rests_on_the_copy_not_on_the_answer(listener, tmp_path, 
     folder = tmp_path / "migrations"
     folder.mkdir()
     (folder / "001_t.sql").write_text(migration)
-    with Sandbox(folder, conftest.BACKEND) as sb:
+    with Sandbox(folder, conftest.RUN_BACKEND) as sb:
         between = listener(_ANSWERS[answer](sb._rest_port))
         sb._rest_port = between.server_address[1]
         attacker = Attacker(sb.anon_channel(), sb.inspector())

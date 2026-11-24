@@ -519,7 +519,7 @@ create policy u on t for update to anon using (public.record());
 create policy d on t for delete to anon using (public.record());
 """)
     from rlsentry.sandbox import POSTGREST_SEARCH_PATH
-    with Sandbox(folder, conftest.BACKEND) as sb:
+    with Sandbox(folder, conftest.RUN_BACKEND) as sb:
         channel = sb.anon_channel()
         for method, body in [("POST", {"note": "x"}), ("PATCH", {"note": "y"}), ("DELETE", None)]:
             sb._conn.execute("truncate seen.settings")
@@ -852,7 +852,7 @@ def test_the_answer_read_is_the_one_to_the_request_asked_about(tmp_path, monkeyp
                                       " with check (note is distinct from 'never');\n")
     rows = {"rls-first": [{"note": "never"}, {"note": "x"}],
             "check-first": [{"note": "x"}, {"note": "never"}]}[order]
-    with Sandbox(folder, conftest.BACKEND) as sb:
+    with Sandbox(folder, conftest.RUN_BACKEND) as sb:
         channel, db = sb.anon_channel(), sb.inspector()
         sent = [channel.request("POST", "inbox", None, row) for row in rows]
         assert [r.body["code"] for r in sent] == ["42501", "42501"]
@@ -960,7 +960,7 @@ alter table inbox enable row level security;
 create policy s on inbox for select to anon using (true);
 create policy w on inbox for update to anon using (true);
 """)
-    with Sandbox(folder, conftest.BACKEND) as sb:
+    with Sandbox(folder, conftest.RUN_BACKEND) as sb:
         channel = sb.anon_channel()
         sent = channel.request("PATCH", "inbox", None, {"note": "changed"})
         assert 200 <= sent.status < 300

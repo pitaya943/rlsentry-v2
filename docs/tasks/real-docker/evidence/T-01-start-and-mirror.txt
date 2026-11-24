@@ -1,0 +1,27 @@
+$ date -u; pgrep -x dockerd (none expected)
+Tue Nov 24 23:45:51 UTC 2026
+(no dockerd)
+$ docker images (pinned tags before)
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+
+$ python3 tests/realdocker.py   # run 1
+starting dockerd (log: /tmp/rlsentry-dockerd.log)
+started dockerd (29.9.3), log: /tmp/rlsentry-dockerd.log
+postgres:16: pulled from docker.io (sha256:07abc3f43c93)
+postgrest/postgrest:v12.2.3: pulled from mirror.gcr.io (sha256:729bf65c733b)
+exit 0
+
+$ python3 tests/realdocker.py   # run 2
+using the Docker daemon already running (29.9.3)
+postgres:16: already present (sha256:07abc3f43c93)
+postgrest/postgrest:v12.2.3: already present (sha256:729bf65c733b)
+exit 0
+$ pgrep -cx dockerd
+1
+$ docker images
+postgres:16 07abc3f43c93
+mirror.gcr.io/library/postgres:16 07abc3f43c93
+public.ecr.aws/docker/library/postgres:16 07abc3f43c93
+postgrest/postgrest:v12.2.3 729bf65c733b
+mirror.gcr.io/postgrest/postgrest:v12.2.3 729bf65c733b
+public.ecr.aws/supabase/postgrest:v12.2.3 729bf65c733b

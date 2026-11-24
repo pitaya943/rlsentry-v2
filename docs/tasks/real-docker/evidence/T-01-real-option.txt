@@ -1,0 +1,7 @@
+$ python3 -m pytest -q -p no:cacheprovider --rlsentry-backend docker tests/test_realdocker.py tests/test_docker.py -k 'realdocker or real_docker' -rs
+..............                                                           [100%]
+14 passed, 33 deselected in 7.39s
+$ docker ps -a --filter label=rlsentry.run -q | wc -l
+0
+$ docker volume ls -q | wc -l
+0
