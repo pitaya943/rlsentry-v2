@@ -1,0 +1,1 @@
+235 passed, 1 skipped in 389.29s (0:06:29)  -- python -m pytest -q -p no:cacheprovider at 73ba666, fresh venv (pip install -e '.[test]'), local backend, 2026-11-24; the skip is tests/test_docker.py real-daemon lab test (no Docker daemon)
