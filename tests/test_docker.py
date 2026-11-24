@@ -462,3 +462,62 @@ def test_lab_on_a_real_docker_daemon_matches_expected_and_leaves_nothing(tmp_pat
     left = subprocess.run(["docker", "ps", "-a", "-q", "--filter", f"label=rlsentry.run={run_id}"],
                           capture_output=True, text=True, check=True).stdout.split()
     assert left == []
+
+
+def _real(*args):
+    return subprocess.run(["docker", *args], capture_output=True, text=True, check=True).stdout
+
+
+def _real_labelled(running_only=False):
+    """Names of the containers on the real daemon that any rlsentry run labelled."""
+    return _real("ps", *([] if running_only else ["-a"]), "--filter", "label=rlsentry.run",
+                 "--format", "{{.Names}}").split()
+
+
+def _wait_for_real_containers(count, timeout=120):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        running = _real_labelled(running_only=True)
+        if len(running) >= count:
+            return running
+        time.sleep(0.2)
+    raise AssertionError("the containers never came up on the real daemon")
+
+
+@pytest.mark.real_docker
+def test_sigint_mid_run_on_a_real_daemon_leaves_nothing(state_dir):
+    """S-6: the owner's Ctrl-C check of 2026-11-24 (#11), repeatable."""
+    assert _real_labelled() == []
+    volumes = set(_real("volume", "ls", "-q").split())
+    proc = rlsentry("attack", "--backend", "docker", "--migrations", str(FIXTURES / "slow"),
+                    state_dir=state_dir)
+    _wait_for_real_containers(2)
+    time.sleep(1)  # into the attack: the anon read is now waiting on pg_sleep
+
+    proc.send_signal(signal.SIGINT)
+    _, err = proc.communicate(timeout=60)
+
+    assert proc.returncode == 2, err
+    assert "interrupted (SIGINT); the copy was torn down" in err
+    assert _real_labelled() == []
+    assert set(_real("volume", "ls", "-q").split()) == volumes
+
+
+@pytest.mark.real_docker
+def test_a_killed_run_on_a_real_daemon_is_swept_by_the_next(state_dir):
+    """S-6: the owner's kill -9 check of 2026-11-24 (#11), repeatable."""
+    assert _real_labelled() == []
+    volumes = set(_real("volume", "ls", "-q").split())
+    killed = rlsentry("attack", "--backend", "docker", "--migrations", str(FIXTURES / "slow"),
+                      state_dir=state_dir)
+    left = _wait_for_real_containers(2)
+    killed.kill()  # SIGKILL: no teardown can run
+    killed.communicate(timeout=10)
+    assert set(left) <= set(_real_labelled())  # the killed run really left its copy behind
+
+    code, _, err = run_rlsentry("attack", "--backend", "docker", "--migrations",
+                                str(FIXTURES / "clean"), state_dir=state_dir)
+
+    assert code == 0, err
+    assert _real_labelled() == []
+    assert set(_real("volume", "ls", "-q").split()) == volumes
