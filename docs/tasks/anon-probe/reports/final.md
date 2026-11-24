@@ -314,7 +314,7 @@ send back:
 Suite at `73ba666`, fresh venv, local backend: `235 passed, 1 skipped` ([suite.txt](../evidence/final-try/suite.txt)); the skip is the real-daemon test. There is no CI on this repository.
 
 After T-07 (PR #10 fix round 1), on `work/anon-probe/T-07`: the full suite under `iso.sh`,
-local backend: `SUITE_RESULT` ([T-07/suite.txt](../evidence/T-07/suite.txt));
+local backend: `251 passed, 1 skipped` at `40b01ee` (the skip is the real-daemon test) ([T-07/suite.txt](../evidence/T-07/suite.txt));
 `tests/test_answers.py` and `tests/test_verdicts.py` with `--rlsentry-backend docker`: `137 passed`
 ([verdicts-docker.txt](../evidence/T-07/verdicts-docker.txt)); the new tests fail at `4c7fccb`
 ([red-at-4c7fccb.txt](../evidence/T-07/red-at-4c7fccb.txt)); 13 mutants, 12 killed by a verdict
