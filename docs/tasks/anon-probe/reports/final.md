@@ -261,8 +261,6 @@ Smaller:
   guarded only through the dead-server test ([PR #3 PASS verdict](https://github.com/pitaya943/rlsentry-v2/pull/3#issuecomment-7105018174)).
 - The repository's `README.md` is still the one-line placeholder; how to run rlsentry is only in
   `.claude/skills/try-rlsentry/SKILL.md` and the spec.
-- `design.md` still says "DRAFT, in discussion" at its top although D-1 to D-3 were decided; the
-  spec now records what was built.
 
 ### Where the spec and the brief or design disagree
 
