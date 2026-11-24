@@ -71,7 +71,10 @@ MUTANTS = [
 ]
 
 
-SLOW = {"docker run without -d": ["-x"]}  # every container start waits out RUN_TIMEOUT
+SLOW = {  # stopped at the first failing test: every test of the suite would wait out a timeout
+    "docker run without -d": ["-x"],  # each container start waits out RUN_TIMEOUT (120 s)
+    "local cluster ignores the sandbox's superuser": ["-x"],  # each local build waits out the 60 s connect
+}
 
 
 def main(only=None):
