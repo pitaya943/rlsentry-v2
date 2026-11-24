@@ -1,0 +1,4 @@
+time	who	decision	why	evidence
+2026-11-24T23:33Z	chief	Task real-docker as a chore outside the roadmap chain; roadmap order kept	Owner asked for it; it closes #11 and #15 item 7 and does not change what lovable-target needs	docs/spec/roadmap.md, #11, #15
+2026-11-24T23:33Z	chief	Folded the anon-probe Retro (6 entries) into .shilaycow/pitfalls.md; entries 1, 2, 6 are due for shilaycow-correct	First task after anon-probe; no pitfalls file existed	https://github.com/pitaya943/rlsentry-v2/issues/2#issuecomment-7145142132
+2026-11-24T23:33Z	chief	Draft brief: mirror fallback in test tooling only, not in rlsentry itself	A user-facing pull from another registry changes what rlsentry runs; the owner asked for the fallback for this environment	docs/tasks/real-docker/brief.md Out of scope
