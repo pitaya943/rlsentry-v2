@@ -1,7 +1,9 @@
-# T-05 fix round 2, after merging task/anon-probe (T-04): python3 docs/tasks/anon-probe/evidence/T-05-mutants/mutants.py, each mutant in a throwaway git worktree of HEAD, full suite under iso.sh, one mutant at a time.
-# Batches: M01-M13 and M14-M22 on ab05855's code (+ runner e2d7099); M23-M37 on 3f2c72c's code (same product code). M29, M30, M31 are the verifier's B11, B12, B07.
-# M23 and M34 stop at their first failing test (-x): under them every test waits out a timeout.
-# M23 first ran without -x and passed its 3600 s runner timeout; it was rerun with -x.
+# T-05 fix round 2, after merging task/anon-probe (T-04): python3 docs/tasks/anon-probe/evidence/T-05-mutants/mutants.py,
+# each mutant in a throwaway git worktree of HEAD, full suite under iso.sh, one mutant at a time.
+# Batches: M01-M13 and M14-M22 on ab05855's product code; M23-M37 on 3f2c72c (same product code, runner change only).
+# M29, M30, M31 are the verifier's B11, B12, B07.
+# M23 and M34 stop at their first failing test (-x): under them every test waits out a timeout (60 s connect, 120 s docker run).
+# M23 first ran without -x and hit the runner's 3600 s timeout; it was rerun with -x.
 M01 db port published on every interface
      13 failed, 136 passed, 1 skipped, 3 errors in 364.71s (0:06:04)
        tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
@@ -70,14 +72,42 @@ M13 auto does not fall back
        tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[remote]
        tests/test_docker.py::test_auto_falls_back_to_local_when_there_is_no_docker_cli
 M14 daemon absence not detected
+     1 failed, 151 passed, 1 skipped in 150.60s (0:02:30)
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[daemon-no
 M15 remote daemon accepted
+     2 failed, 150 passed, 1 skipped in 156.77s (0:02:36)
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[remote]
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[remote-not
 M16 pull failure not detected
+     2 failed, 150 passed, 1 skipped in 152.46s (0:02:32)
+       tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[pull]
+       tests/test_docker.py::test_docker_backend_that_cannot_run_exits_2[pull-cannot
 M17 nonce not checked
+     4 failed, 148 passed, 1 skipped in 148.96s (0:02:28)
+       tests/test_docker.py::test_docker_first_request_is_refused_when_the_nonce_is_not_ours[update
+       tests/test_docker.py::test_docker_first_request_is_refused_when_the_nonce_is_not_ours[delete
+       tests/test_guard.py::test_first_request_is_refused_when_the_nonce_is_not_ours[update
+       tests/test_guard.py::test_first_request_is_refused_when_the_nonce_is_not_ours[delete
 M18 docker alive() always true
+     2 failed, 150 passed, 1 skipped in 145.30s (0:02:25)
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[db-exits-postgres
+       tests/test_docker.py::test_docker_first_request_is_refused_when_a_container_has_stopped
 M19 published ports not checked
+     1 failed, 151 passed, 1 skipped in 152.88s (0:02:32)
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[wide-publish-docker
 M20 JWT secret on the command line
+     1 failed, 151 passed, 1 skipped in 149.69s (0:02:29)
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
 M21 a cut-off docker run is not waited for
+     2 failed, 150 passed, 1 skipped in 140.58s (0:02:20)
+       tests/test_docker.py::test_signal_while_docker_run_is_in_flight_leaves_no_container
+       tests/test_docker.py::test_docker_run_cut_off_by_its_timeout_leaves_no_container
 M22 docker cluster ignores the sandbox's superuser
+     13 failed, 136 passed, 1 skipped, 3 errors in 1059.91s (0:17:39)
+       tests/test_docker.py::test_lab_on_docker_matches_expected_and_leaves_no_container
+       tests/test_docker.py::test_docker_run_binds_127_0_0_1_only_labels_rm_and_pins_both_images
+       tests/test_docker.py::test_auto_uses_docker_when_it_can_run
+       tests/test_docker.py::test_docker_build_failure_exits_2_and_leaves_no_container[rest-run-docker
 M23 local cluster ignores the sandbox's superuser
      1 failed, 2 passed in 65.94s (0:01:05) (stopped at the first failure: -x)
        tests/test_docker.py::test_auto_falls_back_to_local_when_docker_cannot_run[daemon]
