@@ -1,5 +1,7 @@
 """Break each T-05 property one edit at a time; run the full suite isolated (T-03's iso.sh);
-record which tests fail. Run from anywhere in a checkout, as root:
+record which tests fail. Each mutant runs in a throwaway `git worktree` of HEAD next to this
+checkout, never in the checkout itself, so an interrupted run leaves nothing changed here.
+Commit first: the copies are made from HEAD. Run from anywhere in a checkout, as root:
   python3 docs/tasks/anon-probe/evidence/T-05-mutants/mutants.py [N ...]"""
 import re
 import subprocess
@@ -7,7 +9,7 @@ import sys
 from pathlib import Path
 
 WT = Path(__file__).resolve().parents[5]  # the checkout this file is in
-ISO = str(WT / "docs/tasks/anon-probe/evidence/T-03-mutants/iso.sh")
+ISO = WT / "docs/tasks/anon-probe/evidence/T-03-mutants/iso.sh"
 DK, BK, SB = "rlsentry/backends/docker.py", "rlsentry/backends/__init__.py", "rlsentry/sandbox.py"
 
 MUTANTS = [
@@ -69,20 +71,32 @@ MUTANTS = [
 ]
 
 
+SLOW = {"docker run without -d": ["-x"]}  # every container start waits out RUN_TIMEOUT
+
+
 def main(only=None):
+    copies = WT.parent / f"{WT.name}-mutants"
+    subprocess.run(["git", "-C", str(WT), "worktree", "prune"], check=True)
     for i, (desc, rel, old, new) in enumerate(MUTANTS, 1):
         if only and i not in only:
             continue
-        path = WT / rel
-        src = path.read_text()
-        assert src.count(old) == 1, f"M{i} {desc}: pattern found {src.count(old)} times"
+        copy = copies / f"m{i:02d}"
+        if copy.exists():
+            subprocess.run(["git", "-C", str(WT), "worktree", "remove", "--force", str(copy)])
+        subprocess.run(["git", "-C", str(WT), "worktree", "add", "-q", "--detach", str(copy), "HEAD"], check=True)
         try:
+            path = copy / rel
+            src = path.read_text()
+            assert src.count(old) == 1, f"M{i} {desc}: pattern found {src.count(old)} times"
             path.write_text(src.replace(old, new))
-            run = subprocess.run([ISO, "python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rfE"],
-                                 capture_output=True, text=True, timeout=1800)
+            run = subprocess.run([str(copy / ISO.relative_to(WT)), "python3", "-m", "pytest", "-q",
+                                  "-p", "no:cacheprovider", "-rfE", *SLOW.get(desc, [])],
+                                 capture_output=True, text=True, timeout=3600)
             failed = [l.split(" ")[1] for l in run.stdout.splitlines() if l.startswith(("FAILED", "ERROR"))]
             counts = [l for l in run.stdout.splitlines() if re.search(r"\d+ (passed|failed|error)", l)]
             summary = counts[-1].strip("= ") if counts else run.stderr[-200:]
+            if SLOW.get(desc):
+                summary += " (stopped at the first failure: " + " ".join(SLOW[desc]) + ")"
             if not failed:
                 summary = "SURVIVED: " + summary
             print(f"M{i:02d} {desc}\n     {summary}")
@@ -90,7 +104,7 @@ def main(only=None):
                 print(f"       {f}")
             sys.stdout.flush()
         finally:
-            path.write_text(src)
+            subprocess.run(["git", "-C", str(WT), "worktree", "remove", "--force", str(copy)])
 
 
 if __name__ == "__main__":
