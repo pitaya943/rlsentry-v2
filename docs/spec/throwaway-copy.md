@@ -20,9 +20,10 @@ Given a machine where a local Docker daemon answers and `postgres:16` and
 `postgrest/postgrest:v12.2.3` are present or can be pulled,
 when the user runs `rlsentry attack` with `--backend docker` (or without `--backend`),
 then the copy runs as two containers labelled `rlsentry.run=<run id>`, both ports published on
-127.0.0.1 only, and the containers are gone afterwards. **Unverified**: proven only against
-the stand-in daemon `tests/fakedocker.py`; the real images have never run for this project (no
-daemon in the build environment, and Docker Hub answered 429).
+127.0.0.1 only, and the containers are gone afterwards. Shown on a real daemon (Docker 29.9,
+Linux, overlayfs) by `python3 -m pytest -q --rlsentry-backend docker`: the lab, the verdict and
+answer suites, Ctrl-C and `kill -9` (real-docker). Not shown on Docker Desktop, rootless Docker
+or a remote daemon.
 
 ### Ask for a backend this machine cannot run
 
@@ -113,6 +114,15 @@ has died, the run stops with exit 2 before sending anything.
 - On Docker, a Ctrl-C before `docker run` has reached the daemon costs the full 10 s wait and
   prints the "could not confirm" warning, though nothing is left (anon-probe, T-05; left open).
 
+- How the backends are tested: `--rlsentry-backend local` (the default) runs the suite on local
+  processes and never touches Docker; `fakedocker` runs it on the stand-in `tests/fakedocker.py`,
+  which can be made to fail in ways a real daemon cannot be; `docker` runs it on a real daemon,
+  which `tests/realdocker.py` starts when none answers (as root, when `dockerd` is installed)
+  and fills with the two pinned images, pulled from Docker Hub, else `mirror.gcr.io`, else
+  `public.ecr.aws`, and tagged under the pinned names. Only `docker` runs the tests marked
+  `real_docker`, and there they fail, never skip, when the daemon cannot be made ready. Under
+  `docker`, each copy the suites build is checked in the daemon's event log (real-docker).
+
 ## Last changed by
 
-anon-probe (T-01, T-05, T-06, T-07).
+anon-probe (T-01, T-05, T-06, T-07); real-docker (T-01, T-02).
