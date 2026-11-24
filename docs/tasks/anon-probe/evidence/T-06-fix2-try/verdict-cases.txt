@@ -1,0 +1,89 @@
+# T-06 fix round 2: the verdict's cases and this round's probes, run through rlsentry attack
+# (venv with pip install -e . from the worktree, at the fix-round code; product code unchanged since ffa829d).
+
+## d3: verdict D3, its reproduction: an INSTEAD rule sends the PATCH to other.inbox
+```sql
+create schema other;
+create table other.inbox (id bigint, note text);
+grant usage on schema other to anon;
+grant all on other.inbox to anon;
+create table inbox (id bigint generated always as identity primary key, note text);
+alter table inbox enable row level security;
+create policy s on inbox for select to anon using (true);
+create policy u on inbox for update to anon using (session_user = 'authenticator');
+create rule no as on update to inbox do instead update other.inbox set note = new.note where false returning other.inbox.*;
+```
+$ rlsentry attack --migrations d3
+rlsentry: could not build or attack the copy: inbox: UPDATE got no answer from row-level security, so it is neither exposed nor protected (PATCH by primary key: HTTP 204)
+[exit 2]
+
+## swap: an INSTEAD rule turns the PATCH into a DELETE on inbox itself (S20)
+```sql
+create table inbox (id bigint generated always as identity primary key, note text);
+alter table inbox enable row level security;
+create policy s on inbox for select to anon using (true);
+create policy w on inbox for update to anon using (session_user = 'authenticator');
+create rule no as on update to inbox do instead delete from inbox where false returning inbox.*;
+```
+$ rlsentry attack --migrations swap
+rlsentry: could not build or attack the copy: inbox: UPDATE got no answer from row-level security, so it is neither exposed nor protected (PATCH by primary key: HTTP 204)
+[exit 2]
+
+## jsonb: verdict V10: the DELETE by primary key matches no row (a jsonb key read back as a float); using (false)
+```sql
+create table inbox (id jsonb primary key, note text);
+insert into inbox values ('0.10000000000000000001', 'first');
+alter table inbox enable row level security;
+create policy d on inbox for delete to anon using (false);
+```
+$ rlsentry attack --migrations jsonb
+rlsentry: could not build or attack the copy: inbox: DELETE got no answer from row-level security, so it is neither exposed nor protected (DELETE by primary key: HTTP 204)
+[exit 2]
+
+## schema: S6 probe: no schema usage and no table grant; PostgreSQL still names the table
+```sql
+create table inbox (id bigint generated always as identity primary key, note text);
+revoke all on inbox from anon;
+revoke usage on schema public from anon;
+```
+$ rlsentry attack --migrations schema
+rlsentry 0.1.0 attack on /root/t06f2/schema (2026-11-24T16:37:24+00:00)
+
+public.inbox
+  READ: protected - HTTP 401 42501: permission denied for table inbox
+  INSERT: protected (7 rows tried) - HTTP 401 42501: permission denied for table inbox; anon has no grant for INSERT on note of inbox
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 401 42501: permission denied for table inbox, anon has no grant for UPDATE on note, SELECT on id of inbox; PATCH without a filter: HTTP 401 42501: permission denied for table inbox, anon has no grant for UPDATE on note of inbox)
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 401 42501: permission denied for table inbox, anon has no grant for DELETE, SELECT on id of inbox; DELETE without a filter: HTTP 401 42501: permission denied for table inbox, anon has no grant for DELETE of inbox)
+  note: seeded 5 rows
+
+0 exposed operation(s) in 1 table(s).
+[exit 0]
+
+## also: S18/S19 probe: a DO ALSO rule adds a second write; PostgreSQL refuses it inside PostgREST's WITH
+```sql
+create table inbox (id bigint generated always as identity primary key, note text);
+alter table inbox enable row level security;
+create policy s on inbox for select to anon using (true);
+create policy u on inbox for update to anon using (true);
+create rule no as on update to inbox do also delete from inbox where false;
+```
+$ rlsentry attack --migrations also
+rlsentry: could not build or attack the copy: inbox: UPDATE got no answer from row-level security, so it is neither exposed nor protected (PATCH by primary key: HTTP 400 0A000: DO ALSO rules are not supported for data-modifying statements in WITH)
+[exit 2]
+
+## recur: S18/S19 probe: an INSTEAD rule whose action is the same operation on the same table recurses
+```sql
+create table inbox (id bigint generated always as identity primary key, note text);
+alter table inbox enable row level security;
+create policy s on inbox for select to anon using (true);
+create policy u on inbox for update to anon using (true);
+create rule no as on update to inbox do instead update inbox set note = new.note where false returning inbox.*;
+```
+$ rlsentry attack --migrations recur
+rlsentry: could not build or attack the copy: PATCH inbox: the REST layer failed (HTTP 500 42P17: infinite recursion detected in rules for relation "inbox")
+[exit 2]
+
+## jsonb, on the E1 mutant (no-target guard removed; throwaway copy, before this round's tests):
+the by-primary-key DELETE, whose filter matched no row, is read as row-level security's answer
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on inbox); DELETE without a filter: HTTP 204, row-level security lets it reach no row (refused by anon's DELETE policies on inbox: "d"))
+  0 exposed operation(s) in 1 table(s).   [exit 0]

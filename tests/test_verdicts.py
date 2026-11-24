@@ -766,8 +766,16 @@ _STOPS = {
     # PostgREST's RETURNING needs the rule to return rows: it changes another table instead
     "rule": "create table sink (id bigint, note text);\n"
             "create rule no as on {op} to inbox do instead {op} {sink} where false returning sink.*;\n",
+    # ...or a table of the same name in another schema (PR #9 verdict at ffa829d, D3)
+    "rule-other-schema": "create schema other;\ncreate table other.inbox (id bigint, note text);\n"
+                         "create rule no as on {op} to inbox do instead {op} {other} where false"
+                         " returning other.inbox.*;\n",
+    # ...or the other operation on the table itself
+    "rule-other-op": "create rule no as on {op} to inbox do instead {swap} where false returning inbox.*;\n",
 }
 _SINK = {"update": "sink set note = new.note", "delete": "from sink"}
+_OTHER = {"update": "other.inbox set note = new.note", "delete": "from other.inbox"}
+_SWAP = {"update": "delete from inbox", "delete": "update inbox set note = note"}
 
 
 @pytest.mark.parametrize("stop", _STOPS.values(), ids=list(_STOPS))
@@ -776,7 +784,8 @@ _SINK = {"update": "sink set note = new.note", "delete": "from sink"}
 def test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected(
         state_dir, tmp_path, op, policy, stop):
     migration = _VIA_API + _CHANGE.format(op=op.lower(), policy=policy)
-    code, out, err = _run(tmp_path, state_dir, migration + stop.format(op=op.lower(), sink=_SINK[op.lower()]))
+    code, out, err = _run(tmp_path, state_dir, migration + stop.format(
+        op=op.lower(), sink=_SINK[op.lower()], other=_OTHER[op.lower()], swap=_SWAP[op.lower()]))
     assert code == 2, out
     assert f"inbox: {op} got no answer from row-level security" in err
     (tmp_path / "proof").mkdir()  # nothing stops it: the policy lets PostgREST's request through
@@ -849,3 +858,53 @@ def test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected
         "with check (true)", "with check (session_user = 'authenticator')"))
     assert code == 2, out
     assert "posts: INSERT got no answer from row-level security" in err
+
+
+def test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls(state_dir, tmp_path):
+    # The key's text as rlsentry reads it (a float) is not the key: the DELETE's filter matches
+    # no row, so nothing there was refused by row-level security, though it would have been
+    # (using (false)). PostgreSQL's plan shows no row reached, as it would for RLS; only the
+    # target rows being there tells the two apart (PR #9 verdict at ffa829d, V10).
+    code, out, err = _run(tmp_path, state_dir, """
+create table inbox (id jsonb primary key, note text);
+insert into inbox values ('0.10000000000000000001', 'first');
+alter table inbox enable row level security;
+create policy d on inbox for delete to anon using (false);
+""")
+    assert code == 2, out
+    assert ("inbox: DELETE got no answer from row-level security, so it is neither exposed nor "
+            "protected (DELETE by primary key: HTTP 204)") in err
+
+
+def test_the_log_is_read_up_to_a_line_of_rlsentrys_own(tmp_path):
+    # The server writes its log on its own time (the logging collector), so a request's lines
+    # can land after rlsentry asks about it: the read waits for a line rlsentry logs then.
+    # A real server writes them too soon to lose that race on demand; this one writes late.
+    import re
+    import threading
+    import time
+    from rlsentry.sandbox import SUPERUSER, _Log
+    (tmp_path / "log").mkdir()
+    (tmp_path / "current_logfiles").write_text("jsonlog log/server.json\n")
+    (tmp_path / "log" / "server.json").write_text("")
+    request = [
+        {"user": "authenticator", "session_id": "s", "vxid": "3/7", "func_name": "exec_execute_message",
+         "message": "execute <unnamed>: select set_config('request.headers', $1, true)",
+         "detail": 'parameters: $1 = \'{"x-rlsentry-request":"abc"}\''},
+        {"user": "authenticator", "session_id": "s", "vxid": "3/7", "error_severity": "ERROR",
+         "state_code": "42501", "func_name": "ExecWithCheckOptions",
+         "message": 'new row violates row-level security policy for table "inbox"'},
+    ]
+
+    class Server:
+        def execute(self, statement):
+            token = re.search(r"read the log up to here (\w+)", statement)[1]
+            mine = {"user": SUPERUSER, "message": f"rlsentry: read the log up to here {token}"}
+
+            def write_late():
+                time.sleep(0.5)
+                with open(tmp_path / "log" / "server.json", "a") as f:
+                    f.writelines(json.dumps(e) + "\n" for e in request + [mine])
+            threading.Thread(target=write_late).start()
+
+    assert _Log(tmp_path, Server()).request("abc") == request
