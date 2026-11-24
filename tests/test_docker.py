@@ -434,8 +434,12 @@ def test_without_the_servers_log_no_write_is_protected(fake_docker, tmp_path, mo
     (folder / "001_t.sql").write_text(_NO_WRITE_POLICY)
     with Sandbox(folder, backend=backend) as sb:
         assert sb._conn.execute("select pg_current_logfile('jsonlog')").fetchone()[0] is None
-        with pytest.raises(AttackError, match="inbox: INSERT got no answer from row-level security"):
-            attack(sb)
+        try:
+            got = {op.value: f"{r.outcome.value}: {r.basis}"
+                   for f in attack(sb) for op, r in f.results.items()}
+        except AttackError as err:
+            got = str(err)
+    assert "inbox: INSERT got no answer from row-level security" in got, got
 
 
 # The real thing, where a Docker daemon answers (not in the environment this was built in).
