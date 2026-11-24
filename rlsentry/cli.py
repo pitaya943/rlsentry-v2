@@ -16,6 +16,9 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--migrations", type=Path, metavar="DIR", help="folder of .sql migrations")
     source.add_argument("--target", metavar="URL", help="refused: rlsentry never attacks a live project")
     attack.add_argument("--json", action="store_true", help="print the report as JSON")
+    attack.add_argument("--backend", choices=("auto", "docker", "local"), default="auto",
+                        help="where the copy runs: docker containers, local PostgreSQL and "
+                             "PostgREST, or auto (docker if it can run here, else local)")
     args = parser.parse_args(argv)
 
     if args.target is not None:
@@ -35,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"rlsentry: {migrations} is not a directory", file=sys.stderr)
         return 2
     try:
-        report = run(migrations, label)
+        report = run(migrations, label, args.backend)
     except (BuildError, AttackError) as err:
         print(f"rlsentry: could not build or attack the copy: {err}", file=sys.stderr)
         return 2

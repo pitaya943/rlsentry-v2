@@ -15,6 +15,10 @@ throwaway PostgreSQL + PostgREST on random 127.0.0.1 ports, attacks it as anon, 
   Inside the copy, migrations run as the database role `postgres` (not a superuser, as on
   hosted Supabase); the superuser is `supabase_admin`.
 - Run markers live in `~/.local/state/rlsentry` (override with `RLSENTRY_STATE_DIR`).
+- `--backend auto|docker|local` (default `auto`): `docker` runs `postgres:16` and
+  `postgrest/postgrest:v12.2.3` containers instead, labelled `rlsentry.run=<id>`; `auto` uses
+  docker when a daemon on this machine answers and both images are present or pullable, and
+  otherwise says so on stderr and runs locally.
 
 **Drive**: `bash .claude/skills/try-rlsentry/try.sh docs/tasks/<slug>/evidence/<name>` does,
 in order, and fails on the first step that does not give the expected exit code:
@@ -39,4 +43,5 @@ PostgreSQL/PostgREST processes before and after).
 
 **Known limits**: "nothing was sent" for `--target` is shown here only by the refusal message
 and timing; the socket-level proof is `tests/test_guard.py`. The docker backend is not driven
-by this skill.
+by this skill's script; `docs/tasks/anon-probe/evidence/T-05-try/try.sh` drives `--backend`
+here and against `tests/fakedocker.py` when no Docker daemon answers.
