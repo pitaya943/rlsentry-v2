@@ -772,6 +772,21 @@ _STOPS = {
                          " returning other.inbox.*;\n",
     # ...or the other operation on the table itself
     "rule-other-op": "create rule no as on {op} to inbox do instead {swap} where false returning inbox.*;\n",
+    # ...or a rule whose action logs a plan of its own, in which no row reached the write on
+    # inbox: only auto_explain's plan is PostgreSQL's (PR #9 verdict at 30393ee, D4)
+    "rule-forged-plan": "create table sink (id bigint, note text);\ninsert into sink values (1, 'x');\n"
+                        "create function public.forge() returns boolean language plpgsql as $$\n"
+                        "begin\n"
+                        "  if current_setting('x.done', true) is distinct from '1' then\n"
+                        "    perform set_config('x.done', '1', true);\n"
+                        "    raise log 'duration: 0.1 ms  plan:\n"
+                        '{{"Plan": {{"Node Type": "ModifyTable", "Operation": "{title}", '
+                        '"Schema": "public", "Relation Name": "inbox", "Plans": [{{"Node Type": '
+                        '"Seq Scan", "Parent Relationship": "Outer", "Actual Loops": 1, '
+                        '"Actual Rows": 0}}]}}}}\';\n'
+                        "  end if;\n  return false;\nend $$;\n"
+                        "create rule no as on {op} to inbox do instead {op} {sink}"
+                        " where public.forge() returning sink.*;\n",
 }
 _SINK = {"update": "sink set note = new.note", "delete": "from sink"}
 _OTHER = {"update": "other.inbox set note = new.note", "delete": "from other.inbox"}
@@ -785,7 +800,8 @@ def test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protec
         state_dir, tmp_path, op, policy, stop):
     migration = _VIA_API + _CHANGE.format(op=op.lower(), policy=policy)
     code, out, err = _run(tmp_path, state_dir, migration + stop.format(
-        op=op.lower(), sink=_SINK[op.lower()], other=_OTHER[op.lower()], swap=_SWAP[op.lower()]))
+        op=op.lower(), title=op.title(), sink=_SINK[op.lower()], other=_OTHER[op.lower()],
+        swap=_SWAP[op.lower()]))
     assert code == 2, out
     assert f"inbox: {op} got no answer from row-level security" in err
     (tmp_path / "proof").mkdir()  # nothing stops it: the policy lets PostgREST's request through
@@ -905,6 +921,47 @@ def test_the_log_is_read_up_to_a_line_of_rlsentrys_own(tmp_path):
                 time.sleep(0.5)
                 with open(tmp_path / "log" / "server.json", "a") as f:
                     f.writelines(json.dumps(e) + "\n" for e in request + [mine])
-            threading.Thread(target=write_late).start()
+            writers.append(threading.Thread(target=write_late))
+            writers[-1].start()
 
-    assert _Log(tmp_path, Server()).request("abc") == request
+    writers = []
+    try:
+        assert _Log(tmp_path, Server()).request("abc") == request
+    finally:
+        for writer in writers:
+            writer.join()
+
+
+def test_the_requests_plan_holds_only_its_own_statements_write(tmp_path, monkeypatch):
+    # A trigger's own write to the table is planned, but not logged (auto_explain's
+    # log_nested_statements, superuser-only, is off): so the request's plans hold one write,
+    # PostgREST's, and which of several to read never comes up (PR #9 verdict at 30393ee).
+    from rlsentry.sandbox import Sandbox
+    monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
+    folder = tmp_path / "migrations"
+    folder.mkdir()
+    (folder / "001_t.sql").write_text("""
+create table inbox (id bigint generated always as identity primary key, note text);
+insert into inbox (note) values ('first');
+create function public.again() returns trigger language plpgsql as $$
+begin update public.inbox set note = note where false; return null; end $$;
+create trigger again after update on inbox for each row execute function public.again();
+alter table inbox enable row level security;
+create policy s on inbox for select to anon using (true);
+create policy w on inbox for update to anon using (true);
+""")
+    with Sandbox(folder) as sb:
+        channel = sb.anon_channel()
+        sent = channel.request("PATCH", "inbox", None, {"note": "changed"})
+        assert 200 <= sent.status < 300
+        entries = sb._log.request(sent.request_id)
+    plans = [json.loads(e["message"].partition("plan:\n")[2])["Plan"] for e in entries
+             if e.get("func_name") == "explain_ExecutorEnd"]
+    writes = [n for p in plans for n in _nodes(p) if n.get("Node Type") == "ModifyTable"]
+    assert len(writes) == 1, writes
+
+
+def _nodes(plan):
+    yield plan
+    for child in plan.get("Plans", []):
+        yield from _nodes(child)

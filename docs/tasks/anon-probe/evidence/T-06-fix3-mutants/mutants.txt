@@ -1,0 +1,93 @@
+# T-06 fix round 3 (PR #9 verdict at 30393ee: D4, and the class behind it).
+# mutants.py in this directory: each mutant an edit on a fresh copy of the worktree (fix round 2's
+# edits are imported from ../T-06-fix2-mutants/mutants.py by id), the full suite WITHOUT -x under
+# T-03's iso.sh, and every failing test labelled:
+#   assert  the test's assert failed on what rlsentry said (an exit code, a verdict, a message)
+#   crash   the rlsentry run "failed unexpectedly" (an exception), or the test raised other than
+#           by its assert (a KeyError on a finding missing because the run stopped, say)
+# The product code (rlsentry/) is unchanged from ffa829d. Tests at this round's final state.
+
+## D4: the forged plan (the verdict's reproduction, as the _STOPS case rule-forged-plan)
+# Targeted: ONLY="tests/test_verdicts.py -k rule-forged-plan" mutants.py none X1 S14 S14b
+none  4 passed
+X1    4 failed  (a plan is any entry with "plan:\n" in its message: the verdict's mutant)
+      exit 1, UPDATE/DELETE "protected": "no row changed, confirmed as superuser (PATCH by primary
+      key: HTTP 204, row-level security lets it reach no row (refused by anon's UPDATE policies on
+      inbox: \"w\"); ..."
+S14   4 failed  (`if True`: every entry read as a plan) - by a crash:
+      assert 'inbox: UPDATE got no answer from row-level security' in 'rlsentry: the run failed
+      unexpectedly (JSONDecodeError: Expecting value: line 1 column 1 (char 0)); ...'
+S14b  4 failed  (`if True`, an entry with no plan in it read as an empty plan: S14 without its crash)
+      exit 1, "protected", the same basis as X1
+
+## Full suite, every mutant fix round 2 counted as killed, plus this round's variants
+none (sanity: the unmutated copy passes)
+     202 passed in 245.00s (0:04:05)
+R1   2 failed, 200 passed          assert 0  crash 2   (TypeError: 'NoneType' object is not subscriptable)
+R1b  2 failed, 200 passed          assert 2  crash 0
+R3   1 failed, 201 passed          assert 1  crash 0
+R4   1 failed, 201 passed          assert 1  crash 0
+S2   76 failed, 107 passed, 19 err assert 69 crash 7   (0 "failed unexpectedly"; 122 "got no answer")
+S7   1 failed, 201 passed          assert 1  crash 0
+S10  2 failed, 200 passed          assert 2  crash 0
+S14  85 failed, 98 passed, 19 err  assert 1  crash 84  (97 "failed unexpectedly")
+S14b 4 failed, 198 passed          assert 4  crash 0
+S15  77 failed, 106 passed, 19 err assert 70 crash 7   (0 "failed unexpectedly"; 107 "got no answer")
+S16  4 failed, 198 passed          assert 4  crash 0
+S17  8 failed, 194 passed          assert 8  crash 0
+S20  4 failed, 198 passed          assert 4  crash 0
+S21  4 failed, 198 passed          assert 2  crash 2   (0 "failed unexpectedly"; profiles: UPDATE got no answer)
+S21b 4 failed, 198 passed          assert 2  crash 2   (0 "failed unexpectedly"; profiles: UPDATE got no answer)
+S24  4 failed, 198 passed          assert 4  crash 0
+L5   86 failed, 97 passed, 19 err  assert 79 crash 7   (0 "failed unexpectedly"; 131 "got no answer")
+L8   35 failed, 148 passed, 19 err assert 30 crash 5   (0 "failed unexpectedly"; 48 "got no answer")
+L9   20 failed, 170 passed, 12 err assert 20 crash 0
+L12  4 failed, 193 passed, 5 err   assert 4  crash 0   (incl. test_the_log_is_read_up_to_a_line_of_rlsentrys_own)
+A1   75 failed, 108 passed, 19 err assert 68 crash 7   (0 "failed unexpectedly"; 122 "got no answer")
+A2   78 failed, 105 passed, 19 err assert 71 crash 7   (0 "failed unexpectedly"; 109 "got no answer")
+E1   1 failed, 201 passed          assert 1  crash 0
+X1   4 failed, 198 passed          assert 4  crash 0   (all rule-forged-plan)
+N1   1 failed, 201 passed          assert 1  crash 0   (test_the_requests_plan_holds_only_its_own_statements_write: assert 7 == 1)
+# The "crash" rows under S2, S15, L5, L8, A1, A2, S21 are tests that index a finding of a run that
+# stopped with exit 2 (KeyError) or module fixtures; none of those runs failed unexpectedly.
+
+## How each fix-2 kill was made
+# Fix round 2 ran with -x, so it saw only the first failure, and for S2, S14, S15, L5, L8, A1, A2
+# that was test_guard's lab run. Without -x:
+| Mutant | Fix 2's kill | Kill made by | Behavioural kill (a test reading the verdict) |
+|---|---|---|---|
+| R1 ours None not checked | crash on None[:2] | **crash** | R1b (no answer from the oracle read as agreeing, with a basis made up): killed by assert in test_an_update_rls_refuses_on_its_first_row_and_other_code_on_a_later_one_is_not_protected and test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls (exit 0/1 "protected" where 2 is the rule). The verdict also accepted that no non-crashing rewrite of R1 itself exists: it reaches `return ours[2]` |
+| R3, R4 | assert | assert | test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected |
+| S2 no ERROR read | test_guard | assert | 69 tests, e.g. test_a_restrictive_policy_refusing_the_row_is_protected (exit 2 "got no answer" where RLS protects) |
+| S7 | assert | assert | test_d2_...[forged] |
+| S10 | assert | assert | test_d1_an_insert_...[*-nested] |
+| S14 every entry read as a plan | crash reading a non-plan entry | **crash** (JSONDecodeError) | S14b (no crash: a non-plan entry is an empty plan) and X1 (the verdict's): killed by assert in the 4 new rule-forged-plan cases (D4) |
+| S15 any plan node | test_guard | assert | 70 tests, e.g. test_2xx_that_changed_nothing_is_protected[update_hidden-UPDATE]; the scan node makes a second write, so no plan answer: exit 2 "got no answer" |
+| S16, S17, S20, S24 | assert | assert | the rule-other-schema / rule / rule-other-op / trigger-skips cases |
+| S21 every child of the write | test_host [supabase_app] | assert | supabase_app's profiles: UPDATE got no answer (the InitPlan child shows rows); S21b (first child, not the Outer one) the same |
+| L5 request id not matched | test_guard | assert | 79 tests: every request names many transactions, so none is read: exit 2 "got no answer" |
+| L8 any transaction | test_guard | assert | 30 tests: other transactions' entries come in, so the plan count or the ERROR is not this request's: exit 2 |
+| L9 by session | test_host [ext_unqualified] | assert | 20 tests, exit 2 "got no answer" |
+| L12 no wait | assert | assert | test_the_log_is_read_up_to_a_line_of_rlsentrys_own, and by chance 3 verdict tests |
+| A1, A2 never asked | test_guard | assert | 68 / 71 tests: exit 2 "got no answer" where RLS protects |
+| E1 | assert | assert | test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls |
+# So two kills came from a crash, R1 and S14; each now has a non-crashing variant a test kills by
+# its verdict. Every other kill was already an assertion on what rlsentry said.
+
+## S18/S19 (several writes: the first, or the last, read): the reason, completed
+Equivalent. A request's log holds the plans of its own top-level statements only: auto_explain's
+log_nested_statements is off (rlsentry/sandbox.py sets only log_min_duration, log_analyze,
+log_timing, log_format and log_verbose for authenticator, and log_nested_statements is
+superuser-only, so no migration can turn it on). So a trigger's or a policy function's own write
+to the table never adds a second ModifyTable. What else could: PostgREST's write sits in a WITH,
+where PostgreSQL refuses DO ALSO rules (fix 2 probe `also`), and an INSTEAD rule doing the same
+operation on the same table recurses (probe `recur`); so the request holds PostgREST's own write
+alone, or rule writes none of which is the requested operation on public.<table>, which S20
+refuses whichever is read.
+Pinned: test_the_requests_plan_holds_only_its_own_statements_write sends a PATCH to a table whose
+AFTER UPDATE trigger runs its own UPDATE on the table, and expects one ModifyTable in the request's
+plans. N1 (log_nested_statements turned on for authenticator) fails it: assert 7 == 1.
+
+## Final worktree
+$ iso.sh python3 -m pytest -q -p no:cacheprovider
+202 passed in 229.57s (0:03:49)
