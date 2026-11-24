@@ -221,7 +221,10 @@ def _ip(hex_addr):
 
 
 def test_both_sandbox_servers_listen_on_loopback_only(state_dir):
-    proc = rlsentry("attack", "--migrations", str(FIXTURES / "slow"), state_dir=state_dir)
+    # The local backend's processes (the run marker's pids): its own backend, whatever
+    # `--rlsentry-backend` says. On Docker, test_docker.py checks `-p 127.0.0.1:...`.
+    proc = rlsentry("attack", "--backend", "local", "--migrations", str(FIXTURES / "slow"),
+                    state_dir=state_dir)
     try:
         _, info = wait_for_marker(state_dir)
         deadline = time.monotonic() + 30

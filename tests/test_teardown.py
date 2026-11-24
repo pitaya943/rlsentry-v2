@@ -1,4 +1,8 @@
-"""S-8: nothing is left behind, however a run ends."""
+"""S-8: nothing is left behind, however a run ends, on the local backend.
+
+These tests look at what only the local backend has (its processes, run directory and run
+marker), so they name `--backend local` whatever `--rlsentry-backend` says; the docker
+backend's versions are in tests/test_docker.py."""
 
 import os
 import signal
@@ -21,7 +25,8 @@ def _alive(pid):
 @pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
 def test_signal_mid_run_leaves_nothing(state_dir, sig):
     before = residue()
-    proc = rlsentry("attack", "--migrations", str(FIXTURES / "slow"), state_dir=state_dir)
+    proc = rlsentry("attack", "--backend", "local", "--migrations", str(FIXTURES / "slow"),
+                    state_dir=state_dir)
     marker, info = wait_for_marker(state_dir)
     time.sleep(1)  # into the attack: the anon read is now waiting on pg_sleep
     assert all(_alive(pid) for pid in info["pids"])
@@ -49,15 +54,16 @@ def test_build_failure_leaves_nothing(state_dir):
 
 def test_next_run_sweeps_a_killed_run(state_dir):
     before = residue()
-    killed = rlsentry("attack", "--migrations", str(FIXTURES / "slow"), state_dir=state_dir)
+    killed = rlsentry("attack", "--backend", "local", "--migrations", str(FIXTURES / "slow"),
+                      state_dir=state_dir)
     marker, info = wait_for_marker(state_dir)
     killed.kill()  # SIGKILL: no teardown can run
     killed.communicate(timeout=10)
     assert marker.exists() and Path(info["run_dir"]).exists()
     assert all(info["run_dir"] in cmdline(pid) for pid in info["pids"])
 
-    code, _, err = run_rlsentry("attack", "--migrations", str(FIXTURES / "clean"),
-                                state_dir=state_dir)
+    code, _, err = run_rlsentry("attack", "--backend", "local", "--migrations",
+                                str(FIXTURES / "clean"), state_dir=state_dir)
 
     assert code == 0, err
     assert not any(_alive(pid) for pid in info["pids"])
