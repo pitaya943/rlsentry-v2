@@ -5,7 +5,7 @@ By my own check, every scenario of the brief (S-1 to S-10) is met on the local b
 because the real images never ran here; the open findings listed under Not done are left for
 you to decide.
 
-[PR into main: to be opened] · [tracking issue #2](https://github.com/pitaya943/rlsentry-v2/issues/2) ·
+[PR into main: #10](https://github.com/pitaya943/rlsentry-v2/pull/10) · [tracking issue #2](https://github.com/pitaya943/rlsentry-v2/issues/2) ·
 brief: [brief.md](../brief.md) · design: [design.md](../design.md) · plan: [plan.md](../plan.md) ·
 trail: [trail.tsv](../trail.tsv) · spec: [docs/spec/index.md](../../../spec/index.md)
 

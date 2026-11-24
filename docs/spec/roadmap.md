@@ -11,8 +11,8 @@ no area lists a Not yet built section.
 1. **anon-probe** (attack mode) — a user points rlsentry at a project's
    migrations (or the bundled lab) and gets, per table and operation, what an
    anonymous visitor really read, inserted, updated or deleted in a throwaway
-   copy, with evidence; live targets are refused. Pull request into main: to be
-   opened.
+   copy, with evidence; live targets are refused. Pull request into main:
+   [#10](https://github.com/pitaya943/rlsentry-v2/pull/10).
 2. **lovable-target** — the owner builds an app in Lovable the way an
    inexperienced user would (prompt recorded for reproducibility); its
    migrations become a lab target; a write-up of what rlsentry finds. Owner
