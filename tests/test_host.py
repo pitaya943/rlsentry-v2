@@ -181,9 +181,9 @@ def _uses_of_the_column_type(db, settings):
         "value_sources (_fits)": lambda: db.value_sources("d"),  # the CHECK's 'x' as a word
         "would_change": lambda: db.would_change("d", "w", "b", None),
         "fake_row": lambda: db.fake_row("d"),  # a trial insert: d has a CHECK
-        "rls_refusal INSERT": lambda: db.rls_refusal("INSERT", "d", {"w": "c"}, None, settings),
-        "rls_refusal UPDATE": lambda: db.rls_refusal("UPDATE", "d", {"w": "c"}, None, settings),
-        "rls_refusal DELETE": lambda: db.rls_refusal("DELETE", "d", None, None, settings),
+        "rls_refusal INSERT": lambda: db.rls_refusal("INSERT", "d", {"w": "c"}, None, settings, None),
+        "rls_refusal UPDATE": lambda: db.rls_refusal("UPDATE", "d", {"w": "c"}, None, settings, None),
+        "rls_refusal DELETE": lambda: db.rls_refusal("DELETE", "d", None, None, settings, None),
         "make_room": lambda: db.make_room("d", "d_w_key", {"w": "a"}),
     }
 
@@ -191,7 +191,7 @@ def _uses_of_the_column_type(db, settings):
 def test_inspector_runs_migration_code_only_as_postgres(tmp_path, monkeypatch, victim_dir):
     with _domain_sandbox(tmp_path, monkeypatch, victim_dir) as sb:
         db = sb.inspector()
-        settings = sb.anon_channel().settings("POST", "d", {"w": "c"})
+        settings = sb.anon_channel().settings("POST", "d", {"w": "c"}, "0")
         for name, use in _uses_of_the_column_type(db, settings).items():
             calls = sb._conn.execute("select count(*) from public.calls").fetchone()[0]
             use()
@@ -205,7 +205,7 @@ def test_inspector_runs_migration_code_only_as_postgres(tmp_path, monkeypatch, v
 @pytest.mark.parametrize("use, answer", [
     (lambda db: db.holds("d", {"w": "loop"}), False),
     # the oracle: the policy calls ok(), so evaluating it never returns either
-    (lambda db: db.rls_refusal("INSERT", "d", {"w": "loop"}, None, {}), None),
+    (lambda db: db.rls_refusal("INSERT", "d", {"w": "loop"}, None, {}, None), None),
 ], ids=["holds", "rls_refusal"])
 def test_a_migration_function_that_never_returns_cannot_hang_the_run(tmp_path, monkeypatch,
                                                                      victim_dir, use, answer):

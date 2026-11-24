@@ -29,7 +29,7 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from rlsentry.channel import AnonChannel, anon_jwt
+from rlsentry.channel import REQUEST_HEADER, AnonChannel, anon_jwt
 from rlsentry.seed import fake_row, seed, update_values
 
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
@@ -55,6 +55,12 @@ grant set on parameter session_replication_role to postgres;  -- restore() turns
 alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges for role postgres in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges for role postgres in schema public grant all on functions to anon, authenticated, service_role;
+alter role authenticator set log_statement = 'all';  -- names the request (Evidence)
+alter role authenticator set auto_explain.log_min_duration = 0;
+alter role authenticator set auto_explain.log_analyze = on;
+alter role authenticator set auto_explain.log_timing = off;
+alter role authenticator set auto_explain.log_format = json;
+alter role authenticator set auto_explain.log_verbose = on;  -- names each relation's schema
 create schema rlsentry_run;
 create table rlsentry_run.nonce (value text not null);
 create schema rlsentry_seeded authorization postgres;  -- restore()'s copies of the seeded tables
@@ -114,6 +120,13 @@ $$;
 SCHEMAS_ON_PATH = "public, extensions"
 POSTGREST_SEARCH_PATH = '"public", "public", "extensions"'  # db-schemas, then the extra path
 SUPERUSER = "supabase_admin"
+# PostgreSQL's own account of each request PostgREST makes, in a log only the sandbox reads
+# (Evidence): each error with the C function that raised it, and each statement's plan with the
+# rows it really reached. authenticator's settings (_SETUP_SQL) turn the logging on for its
+# sessions alone; none of them can be changed by a role that is not a superuser.
+_EVIDENCE_LOG = ["-c", "logging_collector=on", "-c", "log_destination=jsonlog",
+                 "-c", "log_directory=log", "-c", "log_rotation_age=0", "-c", "log_rotation_size=0",
+                 "-c", "log_error_verbosity=verbose", "-c", "shared_preload_libraries=auto_explain"]
 # For each statement on the postgres connection: a migration's function that never returns
 # (a domain CHECK, a trigger) stops the run instead of hanging it.
 STATEMENT_TIMEOUT = "30s"
@@ -165,6 +178,7 @@ class Sandbox:
         self._procs: list[tuple[subprocess.Popen, signal.Signals]] = []
         self._conn: psycopg.Connection | None = None  # superuser: setup, nonce, checks
         self._app: psycopg.Connection | None = None   # postgres: anything running migration code
+        self._log: _Log | None = None
         self._columns: dict[str, list[str]] = {}
         self._old_handlers: dict = {}
         self._running = False
@@ -213,7 +227,7 @@ class Sandbox:
     def inspector(self) -> "Inspector":
         if not self._running:
             raise RuntimeError("inspector() needs a running sandbox")
-        return Inspector(self._conn, self._app)
+        return Inspector(self._conn, self._app, self._log)
 
     def restore(self) -> None:
         """Put every table back to its seeded state, so one attack cannot hide another (§4)."""
@@ -253,10 +267,12 @@ class Sandbox:
             [bins["postgres"], "-D", str(data), "-p", str(pg_port),
              "-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories=",
              "-c", f'search_path="$user", {SCHEMAS_ON_PATH}',
-             "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"],
+             "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off",
+             *_EVIDENCE_LOG],
             "postgres.log", signal.SIGINT,  # SIGINT = fast shutdown
         )
         self._conn = _connect(pg_port, pg, self._run_dir / "postgres.log")
+        self._log = _Log(data, self._conn)
         self._conn.execute(_SETUP_SQL)
         self._apply_migrations(pg_port)
         self._app = psycopg.connect(host="127.0.0.1", port=pg_port, user="postgres",
@@ -387,9 +403,10 @@ class Inspector:
 
     It holds the sandbox's superuser connection and never hands it out."""
 
-    def __init__(self, conn: psycopg.Connection, app: psycopg.Connection):
+    def __init__(self, conn: psycopg.Connection, app: psycopg.Connection, log: "_Log"):
         self._conn = conn
         self._app = app  # postgres: for anything that runs the table's own code
+        self._log = log
 
     def primary_key(self, table: str) -> list[str]:
         return [r[0] for r in self._conn.execute(
@@ -425,11 +442,68 @@ class Inspector:
                 [value] + [str(row[k]) for k in key]).fetchone()[0]
 
     def rls_refusal(self, op: str, table: str, values: dict | None, row: dict | None,
-                    settings: dict[str, str]) -> str | None:
-        """Does anon's row-level security (or a missing grant) refuse this write? The reason if
-        so, else None. Decided from the policies themselves, as PostgreSQL combines them, for
-        every row the write reaches (`row` picks one by primary key, as the attack's filter did;
-        None means every row), never from an error the table's own code could also raise.
+                    settings: dict[str, str], request_id: str | None) -> str | None:
+        """Did row-level security (or a missing grant) refuse the write PostgREST ran as
+        `request_id`? The reason if so, else None.
+
+        Only PostgreSQL's own account of that request (`_said`, from the server's log) can say
+        yes: the error that ended it was raised by RLS's WITH CHECK or by the privilege check,
+        or, for an UPDATE or DELETE that changed nothing, its plan shows that no row reached the
+        write. rlsentry's own evaluation of the policies (`_evaluate`) must then agree. It runs
+        outside the request (another session, statement and trigger depth), so it can take
+        that answer away but never give it."""
+        ours = self._evaluate(op, table, values, row, settings)
+        theirs = self._said(op, table, request_id)
+        if ours is None or theirs is None or ours[:2] != theirs:
+            return None
+        return ours[2]
+
+    def _said(self, op: str, table: str, request_id: str | None) -> tuple[str, str] | None:
+        """What PostgreSQL said refused the request: ("grant", table), ("check", the table whose
+        WITH CHECK refused a row) or ("using", table) for no row reached; None for anything
+        else. Raised in the server's C code (the function the log names), which nothing a
+        migration says can do in its stead: a RAISE is logged as PL/pgSQL's."""
+        entries = self._log.request(request_id)
+        error = next((e for e in entries if e.get("error_severity") == "ERROR"), None)
+        if error is not None:
+            message, nested = error.get("message") or "", bool(error.get("context"))
+            if error.get("state_code") != "42501":
+                return None
+            if (error.get("func_name") == "aclcheck_error" and not nested
+                    and message == f'permission denied for table {table}'):
+                return ("grant", table)
+            if (error.get("func_name") == "ExecWithCheckOptions"
+                    and message.startswith("new row violates row-level security policy ")
+                    and ' for table "' in message and message.endswith('"')):
+                refused = message.rpartition(' for table "')[2][:-1]
+                # the request's own row is checked at its top level; a row the table's code
+                # writes elsewhere (a trigger: fp2) is checked inside that code
+                if (refused == table) != nested:
+                    return ("check", refused)
+            return None
+        if op == "INSERT" or not entries:
+            return None
+        writes = [node for e in entries if e.get("func_name") == "explain_ExecutorEnd"
+                  for node in _nodes(json.loads(e["message"].partition("plan:\n")[2])["Plan"])
+                  if node.get("Node Type") == "ModifyTable" and node.get("Schema") == "public"
+                  and node.get("Relation Name") == table]
+        if len(writes) != 1 or writes[0].get("Operation") != op.title():
+            return None
+        fed = [n for n in writes[0].get("Plans", []) if n.get("Parent Relationship") == "Outer"]
+        # No row came out of the scan below PostgREST's own write, though the target rows were
+        # there (_evaluate checks): only the scan's quals drop rows, which are PostgREST's
+        # filter and the policies' USING. A rule cannot add its own: PostgREST's RETURNING
+        # refuses a conditional INSTEAD rule, and an unconditional one replaces the write.
+        if len(fed) != 1 or fed[0].get("Actual Loops") != 1 or fed[0].get("Actual Rows") != 0:
+            return None
+        return ("using", table)
+
+    def _evaluate(self, op: str, table: str, values: dict | None, row: dict | None,
+                  settings: dict[str, str]) -> tuple[str, str, str] | None:
+        """rlsentry's own reading of anon's policies for this write, as (what refused, the
+        table, why), or None if they do not refuse it. Decided from the policies as PostgreSQL
+        combines them, for every row the write reaches (`row` picks one by primary key, as the
+        attack's filter did; None means every row).
 
         The rows are the ones PostgreSQL checks: the target rows against USING, and the new row
         (after defaults and BEFORE ROW triggers) against WITH CHECK, caught by a trigger of ours
@@ -449,12 +523,14 @@ class Inspector:
             " else has_column_privilege('anon', %s::oid, %s::name, %s) end",
             (c, rel, p, rel, c, p)).fetchone()[0]]
         if missing:
-            return f"anon has no grant for {', '.join(missing)} of {table}"
+            return ("grant", table, f"anon has no grant for {', '.join(missing)} of {table}")
         if not self._rls_applies("anon", rel):
             return None
         try:
             with self._app.transaction(force_rollback=True):
                 targets = [] if op == "INSERT" else self._target_rows(table, row)
+                if op != "INSERT" and not targets:
+                    return None  # no row there to reach: nothing to say about the policies
                 if op != "DELETE":
                     self._catch([rel], op)
                 self._become("anon", settings)
@@ -462,7 +538,8 @@ class Inspector:
                     using = self._policies("anon", rel, op, "using", filtered)
                     reached = [r for r in targets if self._passes(using, r)]
                     if not reached:
-                        return f"row-level security lets it reach no row ({using.describe()})"
+                        return ("using", table,
+                                f"row-level security lets it reach no row ({using.describe()})")
                     if op == "DELETE":
                         return None  # a row anon's policies let it delete was not deleted
                 self._app.execute(self._statement(op, table, values, row),
@@ -471,17 +548,19 @@ class Inspector:
                 check = self._policies("anon", rel, op, "check", filtered)
                 refused = [new for _, _, new in caught if not self._passes(check, new)]
                 if refused and len(refused) == len(caught):
-                    return f"row-level security refuses the new row ({check.describe()})"
-                why = (f"row-level security refuses {len(refused)} of the {len(caught)} new rows "
-                       f"({check.describe()})") if refused else None
+                    return ("check", table,
+                            f"row-level security refuses the new row ({check.describe()})")
+                why = ("check", table, f"row-level security refuses {len(refused)} of the "
+                       f"{len(caught)} new rows ({check.describe()})") if refused else None
             return self._in_full(op, table, values, row, settings, refused) or why
         except psycopg.Error:
             return None
 
-    def _in_full(self, op, table, values, row, settings, refused: list[str]) -> str | None:
+    def _in_full(self, op, table, values, row, settings, refused: list[str]):
         """Run the write in full but for the `refused` new rows (dropped), with the inserts it
-        makes into other RLS tables caught (and dropped): an error raises. Returns why one of
-        those inserts is refused by its table's policies, for the role that made it, if one is."""
+        makes into other RLS tables caught (and dropped): an error raises. Returns ("check", the
+        table, why) if one of those inserts is refused by its table's policies, for the role
+        that made it."""
         rel = self._oid(table)
         others = [r for (r,) in self._conn.execute(
             "select oid from pg_class where relkind in ('r', 'p') and relrowsecurity"
@@ -500,13 +579,16 @@ class Inspector:
                 self._app.execute(sql.SQL("set local role {}").format(sql.Identifier(role)))
                 check = self._policies(role, other, "INSERT", "check", False)
                 if not self._passes(check, new):
-                    return (f'row-level security on table "{self._name(other)[1]}" refuses the row '
+                    name = self._name(other)[1]
+                    return ("check", name, f'row-level security on table "{name}" refuses the row '
                             f"{table} writes there ({check.describe()})")
         return None
 
     _CATCH = "rlsentry_seeded.rlsentry_catch"
-    # Triggers fire in name order. No name of at most 63 bytes sorts after this one, and the
-    # same name cannot be created twice: ours fires last.
+    # Triggers fire in the byte order of their names. Only a name that begins with these 60
+    # bytes (the highest code point, 15 times) sorts after this one; such a trigger fires after
+    # ours, and the oracle reads the row before it does. That can only make the oracle disagree
+    # with PostgreSQL (no answer) or agree with a refusal PostgreSQL made itself.
     _LAST = "\U0010ffff" * 15
 
     def _catch(self, rels: list[int], op: str, only: list[str] | None = None) -> None:
@@ -750,6 +832,64 @@ end $f$""")
             "select format_type(atttypid, atttypmod) from pg_attribute"
             " where attrelid = format('public.%%I', %s::text)::regclass and attname = %s",
             (table, column)).fetchone()[0]
+
+
+class _Log:
+    """The server's own log (jsonlog), which only the sandbox reads: PostgreSQL's account of
+    each request PostgREST makes. authenticator's sessions log each statement they run, its
+    plan with the rows it really reached, and each error with the C function that raised it."""
+
+    _SYNC = "rlsentry: read the log up to here "
+
+    def __init__(self, data: Path, conn: psycopg.Connection):
+        self._data, self._conn = data, conn
+        self._offset, self._partial = 0, b""
+
+    def request(self, request_id: str | None) -> list[dict]:
+        """The entries of the one transaction whose request carried `request_id` (in the
+        request.headers PostgREST set, logged with the statement that set them), among those
+        logged since the last call; [] if there is not exactly one."""
+        if not request_id:
+            return []
+        entries = self._since_last_call()
+        named = {(e.get("session_id"), e.get("vxid")) for e in entries
+                 if e.get("user") == "authenticator" and e.get("func_name") == "exec_execute_message"
+                 and "set_config('request.headers'" in (e.get("message") or "")
+                 and f'"{REQUEST_HEADER.lower()}":"{request_id}"' in (e.get("detail") or "")}
+        if len(named) != 1:
+            return []
+        return [e for e in entries if e.get("user") == "authenticator"
+                and (e.get("session_id"), e.get("vxid")) in named]
+
+    def _since_last_call(self) -> list[dict]:
+        """Everything logged since the last call. A line of ours, logged now, comes after every
+        line of a request already answered: wait for it."""
+        token = secrets.token_hex(8)
+        self._conn.execute(f"do $$ begin raise log '{self._SYNC}{token}'; end $$")
+        entries, deadline = [], time.monotonic() + 30
+        while True:
+            current = (self._data / "current_logfiles").read_text().split()
+            path = self._data / current[current.index("jsonlog") + 1]
+            with open(path, "rb") as f:
+                f.seek(self._offset)
+                chunk = f.read()
+            self._offset += len(chunk)
+            *lines, self._partial = (self._partial + chunk).split(b"\n")
+            for line in lines:
+                entry = json.loads(line)
+                if entry.get("user") == SUPERUSER and entry.get("message") == self._SYNC + token:
+                    return entries
+                entries.append(entry)
+            if time.monotonic() > deadline:
+                raise BuildError("the server's log stopped growing")
+            time.sleep(0.01)
+
+
+def _nodes(plan: dict):
+    """A plan node and every node below it."""
+    yield plan
+    for child in plan.get("Plans", []):
+        yield from _nodes(child)
 
 
 class _Policies:

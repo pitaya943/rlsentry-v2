@@ -1,9 +1,9 @@
 """Every attacking request, made as anon through an AnonChannel, and the verdicts.
 
 `protected` is a verdict only when row-level security (or a missing grant) answered. A write's
-refusal (42501, or a 2xx that changed nothing) is RLS's only if anon's policies themselves
-refuse the rows it reached, which the sandbox evaluates (`Inspector.rls_refusal`); the error
-alone never says so, as the table's own code can raise any error. Any other refusal (a CHECK,
+refusal (42501, or a 2xx that changed nothing) is RLS's only if PostgreSQL's own account of that
+request says so (`Inspector.rls_refusal`); the error PostgREST returns never does, as the
+table's own code can raise any error. Any other refusal (a CHECK,
 a unique key, a foreign key) is no answer about the policies: the attacker clears the way and
 tries again where it can, and otherwise stops the run (exit 2).
 """
@@ -153,11 +153,13 @@ class Attacker:
 
     def _rls_answered(self, table: str, op: Op, method: str, resp, values, target) -> str | None:
         """Why row-level security (or a missing grant) refused this write, or None if it did
-        not: a 42501, or a 2xx that changed nothing, is RLS's only if anon's policies refuse
-        the rows it reached, evaluated as PostgREST ran this request."""
+        not: a 42501, or a 2xx that changed nothing, is RLS's only if PostgreSQL says so for
+        this very request."""
         if _refused(resp) or (200 <= resp.status < 300 and op is not Op.INSERT):
             return self._db.rls_refusal(op.value, table, values, target,
-                                        self._channel.settings(method, table, values))
+                                        self._channel.settings(method, table, values,
+                                                               resp.request_id),
+                                        resp.request_id)
         return None
 
     def _post(self, table: str, row: dict):

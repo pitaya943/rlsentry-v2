@@ -1,0 +1,179 @@
+# Each case through `rlsentry attack --migrations <dir>` from a venv with `pip install -e .` (fix round 1 head).
+# The -proof cases are the same policy without the refusing code. y-cost-...: a policy false only
+# in PostgREST's request; RLS really refuses it, and rlsentry stops (exit 2): the cost of the rule.
+
+== d1-current_query-proof
+   | create function public.via_api() returns boolean language sql as $$ select current_query() like '%pgrst_source%' $$;
+   | create function public.ok_note(n text) returns boolean language plpgsql as $$
+   | begin
+   |   if current_user = 'anon' and n is distinct from 'magic' then
+   |     raise exception 'note must be magic' using errcode = '42501';
+   |   end if;
+   |   return true;
+   | end $$;
+   | create table inbox (id bigint generated always as identity primary key, note text check (public.ok_note(note)));
+   | alter table inbox enable row level security;
+   | create policy i on inbox for insert to anon with check (public.via_api());
+   | alter table inbox add constraint magic check (note = 'magic' or note is null or note is not null);
+public.inbox
+  INSERT: EXPOSED - anon inserted a row (HTTP 201), row 2 of the value search, with note = "magic" from the CHECK constraints
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on inbox); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on inbox))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on inbox); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on inbox))
+[exit 1]
+
+== d1-current_query
+   | create function public.via_api() returns boolean language sql as $$ select current_query() like '%pgrst_source%' $$;
+   | create function public.ok_note(n text) returns boolean language plpgsql as $$
+   | begin
+   |   if current_user = 'anon' and n is distinct from 'magic' then
+   |     raise exception 'note must be magic' using errcode = '42501';
+   |   end if;
+   |   return true;
+   | end $$;
+   | create table inbox (id bigint generated always as identity primary key, note text check (public.ok_note(note)));
+   | alter table inbox enable row level security;
+   | create policy i on inbox for insert to anon with check (public.via_api());
+rlsentry: could not build or attack the copy: inbox: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 401 42501: note must be magic)
+[exit 2]
+
+== d1-session_user-proof
+   | create function public.ok_note(n text) returns boolean language plpgsql as $$
+   | begin
+   |   if current_user = 'anon' and n is distinct from 'magic' then
+   |     raise exception 'note must be magic' using errcode = '42501';
+   |   end if;
+   |   return true;
+   | end $$;
+   | create table inbox (id bigint generated always as identity primary key, note text check (public.ok_note(note)));
+   | alter table inbox enable row level security;
+   | create policy i on inbox for insert to anon with check (session_user = 'authenticator');
+   | alter table inbox add constraint magic check (note = 'magic' or note is null or note is not null);
+public.inbox
+  INSERT: EXPOSED - anon inserted a row (HTTP 201), row 2 of the value search, with note = "magic" from the CHECK constraints
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on inbox); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on inbox))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on inbox); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on inbox))
+[exit 1]
+
+== d1-session_user
+   | create function public.ok_note(n text) returns boolean language plpgsql as $$
+   | begin
+   |   if current_user = 'anon' and n is distinct from 'magic' then
+   |     raise exception 'note must be magic' using errcode = '42501';
+   |   end if;
+   |   return true;
+   | end $$;
+   | create table inbox (id bigint generated always as identity primary key, note text check (public.ok_note(note)));
+   | alter table inbox enable row level security;
+   | create policy i on inbox for insert to anon with check (session_user = 'authenticator');
+rlsentry: could not build or attack the copy: inbox: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 401 42501: note must be magic)
+[exit 2]
+
+== d2-proof
+   | create function public.ok_note(n text) returns boolean language plpgsql as $$
+   | begin
+   |   if current_user = 'anon' and n is distinct from 'magic' then
+   |     raise exception 'note must be magic' using errcode = '42501';
+   |   end if;
+   |   return true;
+   | end $$;
+   | create table audit (id bigint generated always as identity primary key, what text check (public.ok_note(what)));
+   | alter table audit enable row level security;
+   | create policy "via triggers only" on audit for insert to anon with check (pg_trigger_depth() > 0);
+   | create table posts (id bigint generated always as identity primary key, note text);
+   | create function public.log_post() returns trigger language plpgsql as $$
+   | begin insert into public.audit (what) values (new.note); return new; end $$;
+   | create trigger log_post after insert on posts for each row execute function public.log_post();
+   | alter table posts enable row level security;
+   | create policy "anyone can post" on posts for insert to anon with check (true);
+   | alter table posts add constraint magic check (note = 'magic' or note is null or note is not null);
+  INSERT: protected (12 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "audit"; row-level security refuses the new row (refused by anon's INSERT policies on audit: "via triggers only")
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on audit); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on audit))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on audit); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on audit))
+public.posts
+  INSERT: EXPOSED - anon inserted a row (HTTP 201), row 2 of the value search, with note = "magic" from the CHECK constraints
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on posts); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on posts))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on posts); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on posts))
+[exit 1]
+
+== d2
+   | create function public.ok_note(n text) returns boolean language plpgsql as $$
+   | begin
+   |   if current_user = 'anon' and n is distinct from 'magic' then
+   |     raise exception 'note must be magic' using errcode = '42501';
+   |   end if;
+   |   return true;
+   | end $$;
+   | create table audit (id bigint generated always as identity primary key, what text check (public.ok_note(what)));
+   | alter table audit enable row level security;
+   | create policy "via triggers only" on audit for insert to anon with check (pg_trigger_depth() > 0);
+   | create table posts (id bigint generated always as identity primary key, note text);
+   | create function public.log_post() returns trigger language plpgsql as $$
+   | begin insert into public.audit (what) values (new.note); return new; end $$;
+   | create trigger log_post after insert on posts for each row execute function public.log_post();
+   | alter table posts enable row level security;
+   | create policy "anyone can post" on posts for insert to anon with check (true);
+rlsentry: could not build or attack the copy: posts: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 401 42501: note must be magic)
+[exit 2]
+
+== u-session_user-proof
+   | create table inbox (id bigint generated always as identity primary key, note text);
+   | alter table inbox enable row level security;
+   | create policy s on inbox for select to anon using (true);
+   | create policy w on inbox for update to anon using (session_user = 'authenticator');
+public.inbox
+  INSERT: protected (7 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "inbox"; row-level security refuses the new row (anon has no INSERT policy on inbox)
+  UPDATE: EXPOSED - anon changed 1 row(s) with PATCH by primary key (confirmed as superuser)
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on inbox); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on inbox))
+[exit 1]
+
+== u-session_user-trigger-skips
+   | create table inbox (id bigint generated always as identity primary key, note text);
+   | alter table inbox enable row level security;
+   | create policy s on inbox for select to anon using (true);
+   | create policy w on inbox for update to anon using (session_user = 'authenticator');
+   | create function public.no() returns trigger language plpgsql as $$ begin return null; end $$;
+   | create trigger no before update on inbox for each row execute function public.no();
+rlsentry: could not build or attack the copy: inbox: UPDATE got no answer from row-level security, so it is neither exposed nor protected (PATCH by primary key: HTTP 204)
+[exit 2]
+
+== x-delete-session_user-proof
+   | create table inbox (id bigint generated always as identity primary key, note text);
+   | alter table inbox enable row level security;
+   | create policy s on inbox for select to anon using (true);
+   | create policy w on inbox for delete to anon using (session_user = 'authenticator');
+public.inbox
+  INSERT: protected (7 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "inbox"; row-level security refuses the new row (anon has no INSERT policy on inbox)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on inbox); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on inbox))
+  DELETE: EXPOSED - anon deleted 1 row(s) with DELETE by primary key (confirmed as superuser)
+[exit 1]
+
+== x-delete-session_user-trigger-42501
+   | create table inbox (id bigint generated always as identity primary key, note text);
+   | alter table inbox enable row level security;
+   | create policy s on inbox for select to anon using (true);
+   | create policy w on inbox for delete to anon using (session_user = 'authenticator');
+   | create function public.no() returns trigger language plpgsql as $$ begin raise exception 'no' using errcode = '42501'; end $$;
+   | create trigger no before delete on inbox for each row execute function public.no();
+rlsentry: could not build or attack the copy: inbox: DELETE got no answer from row-level security, so it is neither exposed nor protected (DELETE by primary key: HTTP 401 42501: no)
+[exit 2]
+
+== y-cost-update-policy-false-only-under-postgrest
+   | create table inbox (id bigint generated always as identity primary key, note text);
+   | alter table inbox enable row level security;
+   | create policy s on inbox for select to anon using (true);
+   | create policy w on inbox for update to anon using (session_user <> 'authenticator');
+rlsentry: could not build or attack the copy: inbox: UPDATE got no answer from row-level security, so it is neither exposed nor protected (PATCH by primary key: HTTP 204)
+[exit 2]
+
+== z-using-refuses
+   | create table inbox (id bigint generated always as identity primary key, note text);
+   | alter table inbox enable row level security;
+   | create policy s on inbox for select to anon using (true);
+   | create policy w on inbox for update to anon using (note = 'never');
+   | create policy d on inbox for delete to anon using (note = 'never');
+public.inbox
+  INSERT: protected (7 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "inbox"; row-level security refuses the new row (anon has no INSERT policy on inbox)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (refused by anon's UPDATE policies on inbox: "w"); PATCH without a filter: HTTP 204, row-level security lets it reach no row (refused by anon's UPDATE policies on inbox: "w"))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (refused by anon's DELETE policies on inbox: "d"); DELETE without a filter: HTTP 204, row-level security lets it reach no row (refused by anon's DELETE policies on inbox: "d"))
+[exit 1]
+
