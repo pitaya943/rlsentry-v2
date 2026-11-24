@@ -11,3 +11,7 @@ time	who	decision	why	evidence
 2026-11-24T23:39Z	owner	Pitfalls 1 and 2 (count>=2) go to tasks of their own, not this one; pitfall 6 marked Correct: none possible at count 2	Owner chose D7 as recommended: 1 touches verdict code (critical), 2 needs a standing mutant runner; 6 happens outside the repo	.shilaycow/pitfalls.md
 2026-11-24T23:41Z	owner	brief-approved aea2c48	Owner approved the brief as it stands	chat 2026-11-24
 2026-11-24T23:41Z	autopilot	autopilot-start aea2c48	Gate passed; identity bullet-bots; tracking issue #16	https://github.com/pitaya943/rlsentry-v2/issues/16
+2026-11-24T23:43Z	autopilot	Build the three tickets myself, sequentially, not with builder subagents	All touch tests/conftest.py (pitfall 5) and are small; a builder brief would be longer than the work	docs/tasks/real-docker/plan.md
+2026-11-24T23:43Z	autopilot	All tickets medium; no per-ticket verification, the final verifier judges the whole	No ticket changes rlsentry/; the critical areas (docker teardown, verdict code) are only exercised, not changed	docs/tasks/real-docker/plan.md Risk
+2026-11-24T23:43Z	autopilot	PostgREST ECR fallback is public.ecr.aws/supabase/postgrest (no public.ecr.aws/postgrest repo exists)	Same image ID 729bf65c733b as the gcr mirror of Docker Hub's image	docs/tasks/real-docker/plan.md Facts
+2026-11-24T23:43Z	autopilot	Real-daemon tests skip under local and fakedocker, even when a daemon happens to answer	S-8 (default starts no daemon, pulls no image) and S-7 (real tests never run on the stand-in)	docs/tasks/real-docker/plan.md Shape
