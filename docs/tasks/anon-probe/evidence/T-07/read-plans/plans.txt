@@ -1,0 +1,248 @@
+== falsepol 200 []
+{
+ "Query Text": "WITH pgrst_source AS ( SELECT \"public\".\"falsepol\".* FROM \"public\".\"falsepol\"      )  SELECT null::bigint AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, coalesce(json_agg(_postgrest_t), '[]') AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, '' AS response_inserted FROM ( SELECT * FROM pgrst_source ) _postgrest_t",
+ "Plan": {
+  "Node Type": "Aggregate",
+  "Strategy": "Plain",
+  "Partial Mode": "Simple",
+  "Parallel Aware": false,
+  "Async Capable": false,
+  "Startup Cost": 0.0,
+  "Total Cost": 0.02,
+  "Plan Rows": 1,
+  "Plan Width": 144,
+  "Actual Rows": 1,
+  "Actual Loops": 1,
+  "Output": [
+   "NULL::bigint",
+   "count(ROW(falsepol.id, falsepol.body))",
+   "COALESCE(json_agg(ROW(falsepol.id, falsepol.body)), '[]'::json)",
+   "NULLIF(current_setting('response.headers'::text, true), ''::text)",
+   "NULLIF(current_setting('response.status'::text, true), ''::text)",
+   "''::text"
+  ],
+  "Plans": [
+   {
+    "Node Type": "Result",
+    "Parent Relationship": "Outer",
+    "Parallel Aware": false,
+    "Async Capable": false,
+    "Startup Cost": 0.0,
+    "Total Cost": 0.0,
+    "Plan Rows": 0,
+    "Plan Width": 0,
+    "Actual Rows": 0,
+    "Actual Loops": 1,
+    "Output": [
+     "falsepol.id",
+     "falsepol.body"
+    ],
+    "One-Time Filter": "false"
+   }
+  ]
+ }
+}
+== fnpol 200 []
+{
+ "Query Text": "WITH pgrst_source AS ( SELECT \"public\".\"fnpol\".* FROM \"public\".\"fnpol\"      )  SELECT null::bigint AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, coalesce(json_agg(_postgrest_t), '[]') AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, '' AS response_inserted FROM ( SELECT * FROM pgrst_source ) _postgrest_t",
+ "Plan": {
+  "Node Type": "Aggregate",
+  "Strategy": "Plain",
+  "Partial Mode": "Simple",
+  "Parallel Aware": false,
+  "Async Capable": false,
+  "Startup Cost": 0.01,
+  "Total Cost": 0.03,
+  "Plan Rows": 1,
+  "Plan Width": 144,
+  "Actual Rows": 1,
+  "Actual Loops": 1,
+  "Output": [
+   "NULL::bigint",
+   "count(ROW(pgrst_source.id, pgrst_source.body))",
+   "COALESCE(json_agg(ROW(pgrst_source.id, pgrst_source.body)), '[]'::json)",
+   "NULLIF(current_setting('response.headers'::text, true), ''::text)",
+   "NULLIF(current_setting('response.status'::text, true), ''::text)",
+   "''::text"
+  ],
+  "Plans": [
+   {
+    "Node Type": "Result",
+    "Parent Relationship": "InitPlan",
+    "Subplan Name": "CTE pgrst_source",
+    "Parallel Aware": false,
+    "Async Capable": false,
+    "Startup Cost": 0.0,
+    "Total Cost": 0.0,
+    "Plan Rows": 0,
+    "Plan Width": 0,
+    "Actual Rows": 0,
+    "Actual Loops": 1,
+    "Output": [
+     "id",
+     "body"
+    ],
+    "One-Time Filter": "false"
+   },
+   {
+    "Node Type": "CTE Scan",
+    "Parent Relationship": "Outer",
+    "Parallel Aware": false,
+    "Async Capable": false,
+    "CTE Name": "pgrst_source",
+    "Alias": "pgrst_source",
+    "Startup Cost": 0.0,
+    "Total Cost": 0.0,
+    "Plan Rows": 1,
+    "Plan Width": 40,
+    "Actual Rows": 0,
+    "Actual Loops": 1,
+    "Output": [
+     "pgrst_source.id",
+     "pgrst_source.body"
+    ]
+   }
+  ]
+ }
+}
+== nogrant 401 {"code": "42501", "details": null, "hint": null, "message": "permission denied for table nogrant"}
+ERR aclcheck_error 42501 permission denied for table nogrant None
+== nopol 200 []
+{
+ "Query Text": "WITH pgrst_source AS ( SELECT \"public\".\"nopol\".* FROM \"public\".\"nopol\"      )  SELECT null::bigint AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, coalesce(json_agg(_postgrest_t), '[]') AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, '' AS response_inserted FROM ( SELECT * FROM pgrst_source ) _postgrest_t",
+ "Plan": {
+  "Node Type": "Aggregate",
+  "Strategy": "Plain",
+  "Partial Mode": "Simple",
+  "Parallel Aware": false,
+  "Async Capable": false,
+  "Startup Cost": 0.0,
+  "Total Cost": 0.02,
+  "Plan Rows": 1,
+  "Plan Width": 144,
+  "Actual Rows": 1,
+  "Actual Loops": 1,
+  "Output": [
+   "NULL::bigint",
+   "count(ROW(nopol.id, nopol.body))",
+   "COALESCE(json_agg(ROW(nopol.id, nopol.body)), '[]'::json)",
+   "NULLIF(current_setting('response.headers'::text, true), ''::text)",
+   "NULLIF(current_setting('response.status'::text, true), ''::text)",
+   "''::text"
+  ],
+  "Plans": [
+   {
+    "Node Type": "Result",
+    "Parent Relationship": "Outer",
+    "Parallel Aware": false,
+    "Async Capable": false,
+    "Startup Cost": 0.0,
+    "Total Cost": 0.0,
+    "Plan Rows": 0,
+    "Plan Width": 0,
+    "Actual Rows": 0,
+    "Actual Loops": 1,
+    "Output": [
+     "nopol.id",
+     "nopol.body"
+    ],
+    "One-Time Filter": "false"
+   }
+  ]
+ }
+}
+== owner 200 []
+{
+ "Query Text": "WITH pgrst_source AS ( SELECT \"public\".\"owner\".* FROM \"public\".\"owner\"      )  SELECT null::bigint AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, coalesce(json_agg(_postgrest_t), '[]') AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, '' AS response_inserted FROM ( SELECT * FROM pgrst_source ) _postgrest_t",
+ "Plan": {
+  "Node Type": "Aggregate",
+  "Strategy": "Plain",
+  "Partial Mode": "Simple",
+  "Parallel Aware": false,
+  "Async Capable": false,
+  "Startup Cost": 39.11,
+  "Total Cost": 39.13,
+  "Plan Rows": 1,
+  "Plan Width": 144,
+  "Actual Rows": 1,
+  "Actual Loops": 1,
+  "Output": [
+   "NULL::bigint",
+   "count(ROW(owner.id, owner.user_id, owner.body))",
+   "COALESCE(json_agg(ROW(owner.id, owner.user_id, owner.body)), '[]'::json)",
+   "NULLIF(current_setting('response.headers'::text, true), ''::text)",
+   "NULLIF(current_setting('response.status'::text, true), ''::text)",
+   "''::text"
+  ],
+  "Plans": [
+   {
+    "Node Type": "Seq Scan",
+    "Parent Relationship": "Outer",
+    "Parallel Aware": false,
+    "Async Capable": false,
+    "Relation Name": "owner",
+    "Schema": "public",
+    "Alias": "owner",
+    "Startup Cost": 0.0,
+    "Total Cost": 39.1,
+    "Plan Rows": 1,
+    "Plan Width": 56,
+    "Actual Rows": 0,
+    "Actual Loops": 1,
+    "Output": [
+     "owner.id",
+     "owner.user_id",
+     "owner.body"
+    ],
+    "Filter": "((((NULLIF(current_setting('request.jwt.claims'::text, true), ''::text))::jsonb ->> 'sub'::text))::uuid = owner.user_id)",
+    "Rows Removed by Filter": 5
+   }
+  ]
+ }
+}
+== truepol 200 [{"id": 1, "body": "body-1"}, {"id": 2, "body": "body-2"}, {"id": 3, "body": "body-3"}, {"id": 4, "b
+{
+ "Query Text": "WITH pgrst_source AS ( SELECT \"public\".\"truepol\".* FROM \"public\".\"truepol\"      )  SELECT null::bigint AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, coalesce(json_agg(_postgrest_t), '[]') AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, '' AS response_inserted FROM ( SELECT * FROM pgrst_source ) _postgrest_t",
+ "Plan": {
+  "Node Type": "Aggregate",
+  "Strategy": "Plain",
+  "Partial Mode": "Simple",
+  "Parallel Aware": false,
+  "Async Capable": false,
+  "Startup Cost": 28.0,
+  "Total Cost": 28.02,
+  "Plan Rows": 1,
+  "Plan Width": 144,
+  "Actual Rows": 1,
+  "Actual Loops": 1,
+  "Output": [
+   "NULL::bigint",
+   "count(ROW(truepol.id, truepol.body))",
+   "COALESCE(json_agg(ROW(truepol.id, truepol.body)), '[]'::json)",
+   "NULLIF(current_setting('response.headers'::text, true), ''::text)",
+   "NULLIF(current_setting('response.status'::text, true), ''::text)",
+   "''::text"
+  ],
+  "Plans": [
+   {
+    "Node Type": "Seq Scan",
+    "Parent Relationship": "Outer",
+    "Parallel Aware": false,
+    "Async Capable": false,
+    "Relation Name": "truepol",
+    "Schema": "public",
+    "Alias": "truepol",
+    "Startup Cost": 0.0,
+    "Total Cost": 22.0,
+    "Plan Rows": 1200,
+    "Plan Width": 40,
+    "Actual Rows": 5,
+    "Actual Loops": 1,
+    "Output": [
+     "truepol.id",
+     "truepol.body"
+    ]
+   }
+  ]
+ }
+}

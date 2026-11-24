@@ -16,10 +16,11 @@ Trail rows below link to `trail.tsv` at `73ba666` (row N is line N of the file).
 `rlsentry attack --migrations <dir>` (or `--lab`) builds a throwaway PostgreSQL 16 + PostgREST
 12.2.3 on 127.0.0.1 from a project's Supabase migrations, seeds 5 fake rows per table, and
 really reads, inserts, updates and deletes every `public` table as the anon role through
-PostgREST. Each table and operation gets `EXPOSED` (confirmed by the copy's superuser seeing
-the rows read or changed, with the row as evidence) or `protected` (only when PostgreSQL's own
-server log for that very request shows row-level security or a missing grant refused it);
-anything else stops the run with exit 2 rather than guess. Migrations run as a non-superuser
+PostgREST. Each table and operation gets `EXPOSED` (confirmed by the copy's superuser holding
+the rows read, or seeing the rows changed, with the row as evidence) or `protected` (only when
+PostgreSQL's own server log for that very request shows row-level security or a missing grant
+kept every row from the read or refused the write); anything else, a redirect included, stops
+the run with exit 2 rather than guess. No request follows a redirect, so none leaves the copy. Migrations run as a non-superuser
 `postgres` role like hosted Supabase's, so migration SQL cannot reach the host. `--target <url>`
 is refused before anything is sent, and the copy is torn down on success, failure, Ctrl-C and,
 by the next run's sweep, `kill -9`. The copy runs as local processes or as Docker containers
@@ -114,7 +115,14 @@ Made without asking, from the trail (the full list is the trail itself):
   the request, matched by an `X-Rlsentry-Request` header; rlsentry's own policy evaluation can
   only take `protected` away ([rows 170-175](https://github.com/pitaya943/rlsentry-v2/blob/73ba666/docs/tasks/anon-probe/trail.tsv#L170));
   a policy false only inside PostgREST's request therefore exits 2 ([row 175](https://github.com/pitaya943/rlsentry-v2/blob/73ba666/docs/tasks/anon-probe/trail.tsv#L175));
-  reads are unchanged: a GET 42501 is protected without the log ([row 177](https://github.com/pitaya943/rlsentry-v2/blob/73ba666/docs/tasks/anon-probe/trail.tsv#L177)).
+  reads were at first left unchanged, a GET 42501 protected without the log ([row 177](https://github.com/pitaya943/rlsentry-v2/blob/73ba666/docs/tasks/anon-probe/trail.tsv#L177));
+  T-07 (PR #10 fix round 1) put READ on the same footing (see the history below and T-07's
+  rows in the trail).
+- **READ, since T-07:** `EXPOSED` needs every row received to be a row the superuser holds in
+  the table (compared as jsonb under PostgREST's search path); `protected` needs the log: the
+  privilege check (`aclcheck_error`) for a 42501, or auto_explain's plan of PostgREST's read
+  showing no row fed it for `[]`. Unlike writes, rlsentry does not also evaluate the SELECT
+  policies itself. No HTTP client of rlsentry follows a redirect; a 3xx gives exit 2.
 - **The log is read through the server** (`pg_current_logfile` + `pg_read_binary_file` on the
   superuser connection) on both backends; no log gives exit 2 ([rows 190-191](https://github.com/pitaya943/rlsentry-v2/blob/73ba666/docs/tasks/anon-probe/trail.tsv#L190)).
 - **Left for you, deliberately:** findings listed under Not done, each with its trail row where
@@ -150,8 +158,9 @@ runs on this unproven path.
 | T-04 | [FAIL 5f82d22](https://github.com/pitaya943/rlsentry-v2/pull/6#issuecomment-7112028786) → [FAIL 7408659](https://github.com/pitaya943/rlsentry-v2/pull/6#issuecomment-7113386234) → [FAIL 47467b7](https://github.com/pitaya943/rlsentry-v2/pull/6#issuecomment-7114871846) → [FAIL 981f8f8](https://github.com/pitaya943/rlsentry-v2/pull/6#issuecomment-7116794096) | **used up its three fix rounds**; [#8](https://github.com/pitaya943/rlsentry-v2/issues/8) went to you; you chose option 1: T-04 merged at 981f8f8 as [eac2097](https://github.com/pitaya943/rlsentry-v2/commit/eac2097) with D7-D9 open, and T-06 was added to fix them |
 | T-05 | [FAIL 6658f77](https://github.com/pitaya943/rlsentry-v2/pull/7#issuecomment-7112406573) → [FAIL b7f56ea](https://github.com/pitaya943/rlsentry-v2/pull/7#issuecomment-7115969418) → [PASS e6c9782](https://github.com/pitaya943/rlsentry-v2/pull/7#issuecomment-7139562554) | passed on fix round 2; merged [5041907](https://github.com/pitaya943/rlsentry-v2/commit/5041907) |
 | T-06 | [FAIL c3cb785](https://github.com/pitaya943/rlsentry-v2/pull/9#issuecomment-7134436890) → [FAIL ffa829d](https://github.com/pitaya943/rlsentry-v2/pull/9#issuecomment-7136341651) → [FAIL 30393ee](https://github.com/pitaya943/rlsentry-v2/pull/9#issuecomment-7138303905) → [PASS 2559b10](https://github.com/pitaya943/rlsentry-v2/pull/9#issuecomment-7139911308) → merged with T-05 → [PASS 8700a40](https://github.com/pitaya943/rlsentry-v2/pull/9#issuecomment-7142908520) | passed on fix round 3, the last; passed again after its merge with T-05; merged [a6a094c](https://github.com/pitaya943/rlsentry-v2/commit/a6a094c) |
+| PR #10 (task into main), T-07 | [FAIL 4c7fccb](https://github.com/pitaya943/rlsentry-v2/pull/10#issuecomment-7143781168) | D1: the channel followed redirects, so migration code could send the anon request (JWT included) off the copy and fabricate `READ: EXPOSED` or a false `READ: protected` with exit 0. D2: READ was decided from the HTTP body alone, though the spec and this report said the superuser confirms it. Fixed in T-07 (`work/anon-probe/T-07`): no redirects anywhere, a 3xx is exit 2; READ `EXPOSED` only with rows the superuser holds, `protected` only on PostgreSQL's log of the request |
 
-So 11 of 17 verdicts were FAIL. The code you are asked to merge is the state each final PASS saw;
+So 12 of 18 verdicts were FAIL (counting the first verdict on PR #10). The code you are asked to merge is the state each final PASS saw;
 no ticket was merged on a FAIL except T-04, by your decision, and its open defects were then
 closed by T-06's PASS.
 
@@ -170,10 +179,13 @@ than the attack showed.
 - T-06 round 0: re-evaluating policies outside PostgREST's real context (`session_user`,
   `current_query()`, `pg_trigger_depth()`) read `protected` (D1, D2); later rounds: guards on the
   `protected` path that no test could break (D3, D4, V10).
+- PR #10: READ trusted the HTTP answer, and the channel followed a redirect wherever migration
+  code pointed it (D1, D2). Fixed in T-07.
 
 What ended it was structural: `protected` for a write now needs PostgreSQL's own log entry
 naming the C function that refused (which SQL cannot forge), and rlsentry's own reasoning may
-only take a `protected` away. This is the class to watch in every later task; it fits
+only take a `protected` away. Since T-07 the same holds for READ, and `EXPOSED` for READ needs
+the superuser to hold the rows received. This is the class to watch in every later task; it fits
 `shilaycow-correct` (it happened far more than twice).
 
 ### Open findings
@@ -288,18 +300,28 @@ send back:
 
 | Scenario | Met | Evidence |
 |---|---|---|
-| S-1 Readable table is caught | met | `test_lab.py::test_exposed_read_shows_count_and_a_seeded_row`; `lab_rls_off` in [transcript](../evidence/final-try/transcript.txt); [PR #3 PASS](https://github.com/pitaya943/rlsentry-v2/pull/3#issuecomment-7105018174) |
+| S-1 Readable table is caught | met | `test_lab.py::test_exposed_read_shows_count_and_a_seeded_row`; rows confirmed by the superuser: `test_answers.py::test_a_read_verdict_rests_on_the_copy_not_on_the_answer` (T-07); `lab_rls_off` in [transcript](../evidence/final-try/transcript.txt); [PR #3 PASS](https://github.com/pitaya943/rlsentry-v2/pull/3#issuecomment-7105018174) |
 | S-2 Protected table is not a false alarm | met | `lab_no_policy`, `lab_owner_only` all protected (`test_lab_verdicts_match_expected`); clean folder exit 0; `protected` rests on PostgreSQL's log ([PR #9 PASS 8700a40](https://github.com/pitaya943/rlsentry-v2/pull/9#issuecomment-7142908520)) |
 | S-3 "RLS on but wrong" is caught | met | `lab_using_true` READ EXPOSED; [PR #3 PASS](https://github.com/pitaya943/rlsentry-v2/pull/3#issuecomment-7105018174) |
 | S-4 Each write operation is tried for real | met | `lab_insert_only`, `lab_update_open`, `lab_delete_open`; `test_writes.py`; [PR #4 PASS](https://github.com/pitaya943/rlsentry-v2/pull/4#issuecomment-7105914932), [PR #9 PASS](https://github.com/pitaya943/rlsentry-v2/pull/9#issuecomment-7142908520). Write-only policies found only unfiltered (pg-safeupdate doubt above) |
 | S-5 Policies that accept chosen values are caught | met | `lab_value_policy` EXPOSED with source; `protected (N rows tried)`; `test_verdicts.py::test_value_search_*`. Recall limits above (no UPDATE search, uncastable constants) |
 | S-6 Migrations of a real project are accepted | met | `supabase_app` exit 1, every table seeded; `broken` exit 2 naming file, line, `storage.buckets`; `test_migrations.py`; [PR #5 PASS](https://github.com/pitaya943/rlsentry-v2/pull/5#issuecomment-7109764058). Domain columns and views are gaps |
-| S-7 Never attacks a live project | met | `test_guard.py::test_target_is_refused_before_any_connection` (sockets blocked); `--target` in transcript |
+| S-7 Never attacks a live project | met | `test_guard.py::test_target_is_refused_before_any_connection` (sockets blocked); `--target` in transcript; no request follows a redirect off the copy: `test_answers.py::test_a_read_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere`, `..._write_answered_...`, `test_the_wait_for_the_rest_layer_follows_no_redirect` (T-07) |
 | S-8 Nothing is left behind | met (local); fake only (docker) | `test_teardown.py`, Ctrl-C step and residue `none` in transcript; docker: `test_docker.py` on the fake ([PR #7 PASS](https://github.com/pitaya943/rlsentry-v2/pull/7#issuecomment-7139562554)) |
 | S-9 The lab shows every verdict | met | `test_lab_verdicts_match_expected` against `expected.json`; my `report.json` equals it |
 | S-10 Machine-readable report and exit codes | met | `test_json_report_matches_schema`; exits 0/1/2 in transcript; `test_unexpected.py` |
 
 Suite at `73ba666`, fresh venv, local backend: `235 passed, 1 skipped` ([suite.txt](../evidence/final-try/suite.txt)); the skip is the real-daemon test. There is no CI on this repository.
+
+After T-07 (PR #10 fix round 1), on `work/anon-probe/T-07`: the full suite under `iso.sh`,
+local backend: `SUITE_RESULT` ([T-07/suite.txt](../evidence/T-07/suite.txt));
+`tests/test_answers.py` and `tests/test_verdicts.py` with `--rlsentry-backend docker`: `137 passed`
+([verdicts-docker.txt](../evidence/T-07/verdicts-docker.txt)); the new tests fail at `4c7fccb`
+([red-at-4c7fccb.txt](../evidence/T-07/red-at-4c7fccb.txt)); 13 mutants, 12 killed by a verdict
+check, 1 argued equivalent ([mutants.txt](../evidence/T-07/mutants.txt)); `try-rlsentry` from a
+fresh venv, all steps as expected, lab JSON equal to `expected.json`
+([try/transcript.txt](../evidence/T-07/try/transcript.txt)), and the verdict's D1 reproductions
+now exit 2 with nothing reaching the listener ([try/d1-repro.txt](../evidence/T-07/try/d1-repro.txt)).
 
 ## Tickets and risk
 
@@ -311,8 +333,9 @@ Suite at `73ba666`, fresh venv, local backend: `235 passed, 1 skipped` ([suite.t
 | T-04 value search, full lab | high (planned medium) | raised after T-03's verdict: it changes which role runs every migration ([row 90](https://github.com/pitaya943/rlsentry-v2/blob/73ba666/docs/tasks/anon-probe/trail.tsv#L90)) | fresh verifier, 4 verdicts, all FAIL; merged by your decision |
 | T-05 Docker backend | high | process and container lifetime: teardown is a Critical area ([row 29](https://github.com/pitaya943/rlsentry-v2/blob/73ba666/docs/tasks/anon-probe/trail.tsv#L29)) | fresh verifier, 3 verdicts; real daemon never ran |
 | T-06 RLS oracle | high | decides every `protected` verdict and runs migration-authored expressions ([ticket](../tickets/T-06.md)) | fresh verifier, 5 verdicts incl. the merge |
+| T-07 no redirects, READ on the copy's account | high | decides every READ verdict; the channel is the only route to the copy ([ticket](../tickets/T-07.md)) | fix round 1 of PR #10; verified with PR #10 |
 
-No ticket was verified lightly: all six were high risk and each got an independent verifier for
+No ticket was verified lightly: all seven were high risk and each got an independent verifier for
 every Ready head. The light spot is the Docker path, verified only on the fake.
 
 ## 5. Verification

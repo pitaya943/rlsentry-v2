@@ -1,0 +1,5 @@
+# iso.sh python3 -m pytest -q -p no:cacheprovider --rlsentry-backend docker tests/test_answers.py tests/test_verdicts.py   (at ef1db9d)
+........................................................................ [ 52%]
+.................................................................        [100%]
+137 passed in 285.62s (0:04:45)
+exit 0

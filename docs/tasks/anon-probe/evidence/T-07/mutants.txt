@@ -1,0 +1,76 @@
+# T-07 mutants: python3 docs/tasks/anon-probe/evidence/T-07/mutants.py none D1 D2 D3 R1 ... R10, JOBS=3, each on a git worktree of HEAD ef1db9d
+# (full suite under iso.sh, no -x). assert/crash per fix round 3's classifier; notes at the end.
+
+none none (sanity: the unmutated copy passes)
+     251 passed, 1 skipped in 299.35s (0:04:59)   assert 0 crash 0
+D1 D1 redirects followed again (urllib's default handler)
+     4 failed, 247 passed, 1 skipped in 300.00s (0:05:00)   assert 3 crash 0
+       assert  test_a_read_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[fabricated-exposed]
+       assert  test_a_read_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[false-protected]
+       assert  test_the_wait_for_the_rest_layer_follows_no_redirect
+D2 D2 a 3xx answer read like any other (no stop in _send)
+     5 failed, 246 passed, 1 skipped in 299.34s (0:04:59)   assert 2 crash 0
+       assert  test_a_read_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[fabricated-exposed]
+       assert  test_a_read_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[false-protected]
+D3 D3 the wait for PostgREST follows redirects
+     1 failed, 250 passed, 1 skipped in 312.79s (0:05:12)   assert 1 crash 0
+       assert  test_the_wait_for_the_rest_layer_follows_no_redirect
+R1 R1 READ EXPOSED without the superuser check
+     2 failed, 249 passed, 1 skipped in 308.45s (0:05:08)   assert 2 crash 0
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[fabricated]
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[twice]
+R2 R2 the superuser's rows counted as a set (except, not except all)
+     1 failed, 250 passed, 1 skipped in 307.43s (0:05:07)   assert 1 crash 0
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[twice]
+R3 R3 the superuser's rows written out under its own search path
+     1 failed, 250 passed, 1 skipped in 287.94s (0:04:47)   assert 1 crash 0
+       assert  test_a_readable_table_is_exposed_whatever_its_columns_write_out_by_the_search_path
+R4 R4 READ protected without the log
+     6 failed, 245 passed, 1 skipped in 287.72s (0:04:47)   assert 4 crash 2
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[empty-after]
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[empty-alone]
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[42501]
+       assert  test_a_read_refused_by_the_tables_code_with_the_grants_own_words_is_never_protected
+       crash   test_without_the_servers_log_nothing_is_protected[local]
+       crash   test_without_the_servers_log_nothing_is_protected[docker]
+R5 R5 the read's plan: the rows that fed it not looked at
+     2 failed, 249 passed, 1 skipped in 289.23s (0:04:49)   assert 2 crash 0
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[empty-after]
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[42501]
+R6 R6 any answer may be read protected on the log (not only [] or 42501)
+     1 failed, 250 passed, 1 skipped in 290.83s (0:04:50)   assert 1 crash 0
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[not-rows]
+R7 R7 a GET 42501 never protected (the grant's answer dropped)
+     1 failed, 250 passed, 1 skipped in 290.31s (0:04:50)   assert 1 crash 0
+       assert  test_a_read_refused_by_the_tables_code_with_the_grants_own_words_is_never_protected
+R8 R8 a GET 42501 protected from the body alone (trail row 177)
+     2 failed, 249 passed, 1 skipped in 290.16s (0:04:50)   assert 2 crash 0
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[42501]
+       assert  test_a_read_refused_by_the_tables_code_with_the_grants_own_words_is_never_protected
+R9 R9 READ 0 rows protected from the body alone
+     4 failed, 247 passed, 1 skipped in 309.84s (0:05:09)   assert 2 crash 2
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[empty-after]
+       assert  test_a_read_verdict_rests_on_the_copy_not_on_the_answer[empty-alone]
+       crash   test_without_the_servers_log_nothing_is_protected[local]
+       crash   test_without_the_servers_log_nothing_is_protected[docker]
+R10 R10 the grant's refusal read from any function the log names
+     SURVIVED: 251 passed, 1 skipped in 311.46s (0:05:11)
+
+Notes
+- The classifier's regex skips test ids with spaces, so the write cases of
+  test_a_write_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere are missing above.
+  From D1.out / D2.out, all are AssertionError:
+    D1: [INSERT-...] fails `assert elsewhere.seen == []` (urllib re-sends a POST 302 as a GET to the
+        listener); PATCH and DELETE 302s are not followed by urllib's default handler either, so
+        the 3xx stop in _send still holds for them under D1.
+    D2: [INSERT-...] message; [UPDATE-...] and [DELETE-...] `assert 1 == 2` (the write reads EXPOSED).
+- R4 and R9 "crash" on test_without_the_servers_log_nothing_is_protected[local|docker] is
+  pytest.raises' "DID NOT RAISE AttackError": READ returned `protected` without the log, a
+  verdict check, not a crash.
+- R10 SURVIVED, equivalent: the grant branch of _said (T-06 code, now also on READ) also requires
+  the error to be at the top level (no context). A RAISE can only come from a PL/pgSQL function,
+  which always logs a context ("PL/pgSQL function ... at RAISE"), so a context-free 42501
+  "permission denied for table <t>" comes only from the privilege check. The verdict's case (a
+  policy's function raising the grant's own words) is killed by the context check:
+  test_a_read_refused_by_the_tables_code_with_the_grants_own_words_is_never_protected
+  (R8 shows that test checks the log, not the body).
