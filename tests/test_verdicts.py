@@ -494,7 +494,6 @@ create policy i on inbox for insert to anon with check (true);
 def test_the_oracle_gets_exactly_the_settings_postgrest_makes(tmp_path, monkeypatch):
     # A policy records what PostgREST set for each request; the channel's settings for the same
     # request, which the oracle evaluates policies under, must be the same.
-    from rlsentry.sandbox import Sandbox
     monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
     folder = tmp_path / "migrations"
     folder.mkdir()
@@ -519,7 +518,7 @@ create policy u on t for update to anon using (public.record());
 create policy d on t for delete to anon using (public.record());
 """)
     from rlsentry.sandbox import POSTGREST_SEARCH_PATH
-    with Sandbox(folder, conftest.RUN_BACKEND) as sb:
+    with conftest.copy_of(folder) as sb:
         channel = sb.anon_channel()
         for method, body in [("POST", {"note": "x"}), ("PATCH", {"note": "y"}), ("DELETE", None)]:
             sb._conn.execute("truncate seen.settings")
@@ -843,7 +842,6 @@ create policy i on inbox for insert to anon with check ({policy});
 def test_the_answer_read_is_the_one_to_the_request_asked_about(tmp_path, monkeypatch, order):
     # Two refused requests before rlsentry asks about the second: RLS refuses one ('never'),
     # the CHECK the other (with RLS's code, and a policy only PostgREST's request passes).
-    from rlsentry.sandbox import Sandbox
     monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
     folder = tmp_path / "migrations"
     folder.mkdir()
@@ -852,7 +850,7 @@ def test_the_answer_read_is_the_one_to_the_request_asked_about(tmp_path, monkeyp
                                       " with check (note is distinct from 'never');\n")
     rows = {"rls-first": [{"note": "never"}, {"note": "x"}],
             "check-first": [{"note": "x"}, {"note": "never"}]}[order]
-    with Sandbox(folder, conftest.RUN_BACKEND) as sb:
+    with conftest.copy_of(folder) as sb:
         channel, db = sb.anon_channel(), sb.inspector()
         sent = [channel.request("POST", "inbox", None, row) for row in rows]
         assert [r.body["code"] for r in sent] == ["42501", "42501"]
@@ -946,7 +944,7 @@ def test_the_requests_plan_holds_only_its_own_statements_write(tmp_path, monkeyp
     # A trigger's own write to the table is planned, but not logged (auto_explain's
     # log_nested_statements, superuser-only, is off): so the request's plans hold one write,
     # PostgREST's, and which of several to read never comes up (PR #9 verdict at 30393ee).
-    from rlsentry.sandbox import Sandbox, _nodes
+    from rlsentry.sandbox import _nodes
     monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
     folder = tmp_path / "migrations"
     folder.mkdir()
@@ -960,7 +958,7 @@ alter table inbox enable row level security;
 create policy s on inbox for select to anon using (true);
 create policy w on inbox for update to anon using (true);
 """)
-    with Sandbox(folder, conftest.RUN_BACKEND) as sb:
+    with conftest.copy_of(folder) as sb:
         channel = sb.anon_channel()
         sent = channel.request("PATCH", "inbox", None, {"note": "changed"})
         assert 200 <= sent.status < 300

@@ -1,0 +1,11 @@
+T-02 mutants, each in a throwaway git worktree (pitfall 4) with PYTHONPATH set to it, so the
+mutated rlsentry is the one run; no -x. Kills checked to be assertion failures (pitfall 2).
+
+W1 suites told `local` under --rlsentry-backend docker -> value_search tests: 3 failed, 14 errors
+   (module fixture). Assertion: "expected one copy on the real daemon since ..., the daemon saw runs []"
+W2 stand-in daemon on PATH under --rlsentry-backend docker -> 3 failed, 14 errors
+   (assertion "the stand-in daemon is on PATH" / no run on the real daemon)
+W3 DockerBackend.stop() does nothing -> test_sigint_mid_run_on_a_real_daemon_leaves_nothing failed:
+   assert ['rlsentry-...-db'] == []
+W4 DockerBackend.sweep() does nothing -> test_a_killed_run_on_a_real_daemon_is_swept_by_the_next failed
+Unmutated: verdict + answer suites 137 passed (T-02-suites-on-real-docker.txt); real tests 3 passed.

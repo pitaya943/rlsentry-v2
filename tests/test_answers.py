@@ -212,13 +212,12 @@ _READABLE = _NOTES + "create policy r on notes for select to anon using (true);\
 def test_a_read_verdict_rests_on_the_copy_not_on_the_answer(listener, tmp_path, monkeypatch,
                                                            migration, answer, verdict):
     from rlsentry.attacker import Attacker, AttackError
-    from rlsentry.sandbox import Sandbox
 
     monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
     folder = tmp_path / "migrations"
     folder.mkdir()
     (folder / "001_t.sql").write_text(migration)
-    with Sandbox(folder, conftest.RUN_BACKEND) as sb:
+    with conftest.copy_of(folder) as sb:
         between = listener(_ANSWERS[answer](sb._rest_port))
         sb._rest_port = between.server_address[1]
         attacker = Attacker(sb.anon_channel(), sb.inspector())

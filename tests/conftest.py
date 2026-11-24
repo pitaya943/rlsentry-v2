@@ -1,3 +1,4 @@
+import contextlib
 import glob
 import json
 import os
@@ -112,9 +113,58 @@ def rlsentry(*args, state_dir, **kw):
 
 
 def run_rlsentry(*args, state_dir):
+    since = time.time()
     proc = rlsentry(*args, state_dir=state_dir)
     out, err = proc.communicate(timeout=120)
+    if args[:1] == ("attack",) and "--backend" not in args:
+        witness_real_copy(since, err)
     return proc.returncode, out, err
+
+
+# Under `--rlsentry-backend docker`, every copy a test builds without naming a backend must be
+# shown to have run on the real daemon (brief real-docker S-5), not merely to have been asked
+# for: the real daemon's own event log must hold the creation of a container labelled with
+# exactly one run id since the copy was asked for. COPIES_SEEN counts them for the summary.
+COPIES_SEEN = []
+
+
+def _real_runs_since(since):
+    out = subprocess.run(
+        ["docker", "events", "--since", f"{since:.3f}", "--until", f"{time.time():.3f}",
+         "--filter", "type=container", "--filter", "event=create",
+         "--filter", "label=rlsentry.run", "--format", '{{index .Actor.Attributes "rlsentry.run"}}'],
+        capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, f"docker events failed: {out.stderr}"
+    return set(out.stdout.split())
+
+
+def witness_real_copy(since, context="", run_id=None):
+    if BACKEND != "docker":
+        return
+    assert "FAKE_DOCKER_DIR" not in os.environ, "the stand-in daemon is on PATH"
+    runs = _real_runs_since(since)
+    assert len(runs) == 1, (f"expected one copy on the real daemon since {since:.3f}, the daemon "
+                            f"saw runs {sorted(runs)}\n{context}")
+    if run_id is not None:
+        assert runs == {run_id}, (runs, run_id)
+    COPIES_SEEN.extend(runs)
+
+
+@contextlib.contextmanager
+def copy_of(folder):
+    """Sandbox(folder) on the suite's backend; under the real daemon, witnessed like a run."""
+    from rlsentry.sandbox import Sandbox
+    since = time.time()
+    with Sandbox(folder, RUN_BACKEND) as sb:
+        yield sb
+    witness_real_copy(since, run_id=sb._run_id)
+
+
+def pytest_terminal_summary(terminalreporter):
+    if BACKEND == "docker":
+        terminalreporter.write_line(
+            f"real Docker: {len(COPIES_SEEN)} copies built without a named backend, each seen "
+            f"created on the real daemon ({len(set(COPIES_SEEN))} distinct run ids)")
 
 
 def cmdline(pid):
