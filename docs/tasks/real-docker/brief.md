@@ -27,7 +27,8 @@ available under its own name, and the whole suite passes on it too.
   it pins. The fallback lives in the test tooling.
 - Docker Desktop on macOS, rootless Docker, remote daemons: not available here.
 - The branch `spike/rls-ordering`: kept untouched (the roadmap's `live-probe` refers to it).
-- A GitHub Actions workflow: see Assumptions (owner's call, pending).
+- A GitHub Actions workflow. Owner's choice: a later task of its own (the bot cannot push
+  under `.github/`; the workflow will call this task's real-Docker command).
 
 ## Scenarios
 
@@ -67,7 +68,6 @@ Area for all: [The throwaway copy and its backends](../../spec/throwaway-copy.md
   not run against the stand-in.
 - **S-8 The default test command is unchanged.** *(keeps behaviour)* Given the project's default
   test command with no backend option, when it runs, then it starts no daemon and pulls no image.
-  *(Pending: see Assumptions, "Default test command".)*
 - **S-9 Issue #11 is settled.** *(record)* Given the scenarios above pass, when the task's pull
   request is opened, then #11 is closed with links to the evidence, or left open listing exactly
   what is still unproven; and the spec's "Run on Docker" scenario no longer says Unverified.
@@ -93,15 +93,16 @@ Area for all: [The throwaway copy and its backends](../../spec/throwaway-copy.md
 
 ## Assumptions
 
-- **Where dockerd is started (pending owner's choice; recommended: a helper in the repo).** A
+- **Where dockerd is started (owner's choice: a helper in the repo).** A
   script in the repository, called by the test tooling when the real-Docker option is given. It
   does nothing when a daemon already answers, starts `dockerd` in the background only as root and
   only when the binary exists, waits up to 60 s for it, and leaves it running after the tests.
-  Not the environment's setup script (see the chat's trade-offs).
-- **Option names (pending).** `--rlsentry-backend docker` comes to mean the real daemon;
+  Not the environment's setup script: that runs only when a container is built fresh (gone
+  after a resume), may not start background daemons, and is not versioned with the code.
+- **Option names (owner's choice).** `--rlsentry-backend docker` comes to mean the real daemon;
   `--rlsentry-backend fakedocker` selects the stand-in. Anyone running the old command gets the
   real daemon.
-- **Default test command (pending).** The configured `python3 -m pytest -q` stays local-only and
+- **Default test command (owner's choice).** The configured `python3 -m pytest -q` stays local-only and
   the real-daemon tests skip there, with a reason that names the real-Docker command. The
   harness's verification runs both commands for this task (the real-Docker one is named in the
   plan).

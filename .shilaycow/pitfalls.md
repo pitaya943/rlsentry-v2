@@ -62,6 +62,8 @@ tracking issues it came from; a source listed here is already folded in).
   with absolute paths.
 - **Times:** 2.
 - **Sources:** #2.
+- **Correct:** none possible at count 2 (task real-docker, trail): the leftovers are written by
+  builder sessions outside the repository, where no check in the repository runs.
 
 ## Guarded
 

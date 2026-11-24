@@ -2,3 +2,10 @@ time	who	decision	why	evidence
 2026-11-24T23:33Z	chief	Task real-docker as a chore outside the roadmap chain; roadmap order kept	Owner asked for it; it closes #11 and #15 item 7 and does not change what lovable-target needs	docs/spec/roadmap.md, #11, #15
 2026-11-24T23:33Z	chief	Folded the anon-probe Retro (6 entries) into .shilaycow/pitfalls.md; entries 1, 2, 6 are due for shilaycow-correct	First task after anon-probe; no pitfalls file existed	https://github.com/pitaya943/rlsentry-v2/issues/2#issuecomment-7145142132
 2026-11-24T23:33Z	chief	Draft brief: mirror fallback in test tooling only, not in rlsentry itself	A user-facing pull from another registry changes what rlsentry runs; the owner asked for the fallback for this environment	docs/tasks/real-docker/brief.md Out of scope
+2026-11-24T23:39Z	owner	Start dockerd from a helper script in the repo called by the real-Docker pytest option, not the environment setup script	Owner chose D1 as recommended: setup script runs only on fresh containers and may not start daemons; helper is versioned and reusable	chat 2026-11-24; brief Assumptions
+2026-11-24T23:39Z	owner	--rlsentry-backend docker means the real daemon; fakedocker selects the stand-in	Owner chose D2 as recommended	brief Assumptions
+2026-11-24T23:39Z	owner	Default test command stays local-only; real-daemon tests skip there and fail (never skip) under the real-Docker option	Owner chose D3 as recommended	brief S-2 S-8
+2026-11-24T23:39Z	owner	Mirror fallback in test tooling only	Owner confirmed D4	brief Out of scope
+2026-11-24T23:39Z	owner	GitHub Actions workflow deferred to a later task	Owner chose D5: bot cannot push .github/; CI will reuse this task's command	brief Out of scope
+2026-11-24T23:39Z	owner	Close #11 once S-4..S-6 pass; list what stays unproven in the closing comment	Owner chose D6 as recommended	brief S-9
+2026-11-24T23:39Z	owner	Pitfalls 1 and 2 (count>=2) go to tasks of their own, not this one; pitfall 6 marked Correct: none possible at count 2	Owner chose D7 as recommended: 1 touches verdict code (critical), 2 needs a standing mutant runner; 6 happens outside the repo	.shilaycow/pitfalls.md
