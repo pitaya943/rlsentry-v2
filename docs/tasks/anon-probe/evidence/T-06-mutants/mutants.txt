@@ -1,0 +1,117 @@
+# T-06: python3 docs/tasks/anon-probe/evidence/T-06-mutants/mutants.py, each mutant on a throwaway copy of the checkout (never the worktree), full suite with -x, isolated by T-03's iso.sh; first failing test shown.
+# Run 1 at the oracle as committed (M26 and M35 survived). Then tests were added: a write refused for want of a grant (kills M26),
+# and anon given USAGE on the writer test's schema, so only the role decides (kills M35). Run 2: M00, M26, M35. 36 of 36 killed.
+# PR #6 verdict D9: v1 = M01, v5 = M02, v6 = M03/M04 (the resend they broke is gone; these are the same edits to the oracle).
+M00 none (sanity: the unmutated copy passes)
+     153 passed in 137.62s (0:02:17)
+M01 v1: no JWT claims
+     1 failed, 124 passed in 108.53s (0:01:48)
+       tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[claims]
+M02 v5: no answer from the oracle (an error) counts as RLS's
+     1 failed, 35 passed in 30.17s
+       tests/test_host.py::test_a_migration_function_that_never_returns_cannot_hang_the_run[rls_refusal]
+M03 v6a: a 2xx that changed nothing is never asked about
+     1 failed, 13 passed in 5.79s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M04 v6b: no row reached is not RLS's answer
+     1 failed, 13 passed in 6.14s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M05 oracle on the superuser connection
+     1 failed, 33 passed in 28.28s
+       tests/test_host.py::test_inspector_runs_migration_code_only_as_postgres
+M06 oracle commits
+     1 failed, 13 passed in 6.59s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M07 oracle not as anon
+     1 failed, 123 passed in 107.12s (0:01:47)
+       tests/test_verdicts.py::test_a_refusal_by_rls_is_protected_whatever_the_tables_triggers_do[fp2]
+M08 claims without exp
+     1 failed, 125 passed in 108.45s (0:01:48)
+       tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[exp]
+M09 no request.* settings
+     1 failed, 124 passed in 110.34s (0:01:50)
+       tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[claims]
+M10 no request.method
+     1 failed, 128 passed in 112.69s (0:01:52)
+       tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[method]
+M11 no request.path
+     1 failed, 129 passed in 114.94s (0:01:54)
+       tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[path]
+M12 no request.headers
+     1 failed, 83 passed in 71.91s (0:01:11)
+       tests/test_verdicts.py::test_an_answer_that_is_not_rls_is_never_protected[P0001-got
+M13 no request.cookies
+     1 failed, 131 passed in 115.79s (0:01:55)
+       tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[cookies]
+M14 not PostgREST's search_path
+     1 failed, 132 passed in 117.66s (0:01:57)
+       tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[search_path]
+M15 headers not the ones sent
+     1 failed, 136 passed in 122.43s (0:02:02)
+       tests/test_verdicts.py::test_the_oracle_gets_exactly_the_settings_postgrest_makes
+M16 restrictive policies OR'd
+     1 failed, 134 passed in 120.20s (0:02:00)
+       tests/test_verdicts.py::test_a_restrictive_policy_refusing_the_row_is_protected[anon]
+M17 public-role policies ignored
+     1 failed, 41 passed in 32.79s
+       tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+M18 every role's policies count
+     1 failed, 13 passed in 5.93s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M19 no permissive policy lets the row through
+     1 failed, 13 passed in 6.15s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M20 a null policy result lets the row through
+     1 failed, 13 passed in 6.23s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M21 WITH CHECK ignored (USING only)
+     1 failed, 41 passed in 34.16s
+       tests/test_lab.py::test_text_report_shows_verdicts_evidence_notes_and_summary
+M22 SELECT policies not applied to a filtered write
+     1 failed, 88 passed in 80.04s (0:01:20)
+       tests/test_verdicts.py::test_update_refused_only_by_a_unique_key_is_not_protected
+M23 USING not evaluated: every target row reached
+     1 failed, 13 passed in 5.99s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M24 the row checked before the table's BEFORE triggers
+     1 failed, 122 passed in 114.67s (0:01:54)
+       tests/test_verdicts.py::test_a_refusal_by_rls_is_protected_whatever_the_tables_triggers_do[fp1]
+M25 generated columns not computed
+     1 failed, 117 passed in 107.11s (0:01:47)
+       tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[c42-generated]
+M27 RLS off read as RLS
+     1 failed, 116 passed in 101.87s (0:01:41)
+       tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[c42-rls-off]
+M28 a reachable row's delete counts as refused
+     1 failed, 110 passed in 93.38s (0:01:33)
+       tests/test_verdicts.py::test_a_refusal_from_the_tables_own_code_is_never_read_as_rls[del42]
+M29 some refused rows count as all
+     1 failed, 137 passed in 120.98s (0:02:00)
+       tests/test_verdicts.py::test_an_update_whose_policy_refuses_some_of_the_new_rows_is_protected
+M30 write not run in full
+     1 failed, 123 passed in 106.53s (0:01:46)
+       tests/test_verdicts.py::test_a_refusal_by_rls_is_protected_whatever_the_tables_triggers_do[fp2]
+M31 refused rows not dropped from the full run
+     1 failed, 137 passed in 121.19s (0:02:01)
+       tests/test_verdicts.py::test_an_update_whose_policy_refuses_some_of_the_new_rows_is_protected
+M32 other tables' inserts not caught
+     1 failed, 123 passed in 104.78s (0:01:44)
+       tests/test_verdicts.py::test_a_refusal_by_rls_is_protected_whatever_the_tables_triggers_do[fp2]
+M33 a role bypassing RLS elsewhere is refused anyway
+     1 failed, 139 passed in 121.89s (0:02:01)
+       tests/test_verdicts.py::test_a_write_elsewhere_by_a_role_that_bypasses_rls_is_no_answer_from_rls
+M34 elsewhere checked as anon, not the role that wrote
+     1 failed, 140 passed in 122.64s (0:02:02)
+       tests/test_verdicts.py::test_a_write_elsewhere_is_checked_against_the_policies_of_the_role_that_made_it
+M36 no statement timeout on the postgres connection
+     1 failed, 34 passed in 40.95s
+       tests/test_host.py::test_a_migration_function_that_never_returns_cannot_hang_the_run[holds]
+# run 2
+M00 none (sanity: the unmutated copy passes)
+     154 passed in 131.21s (0:02:11)
+M26 grant not checked
+     1 failed, 141 passed in 122.93s (0:02:02)
+       tests/test_verdicts.py::test_a_write_refused_for_want_of_a_grant_is_protected
+M35 elsewhere evaluated as anon
+     1 failed, 140 passed in 121.17s (0:02:01)
+       tests/test_verdicts.py::test_a_write_elsewhere_is_checked_against_the_policies_of_the_role_that_made_it

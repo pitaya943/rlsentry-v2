@@ -381,7 +381,14 @@ _R42 = _GATE.format(**_T42, policies=_OPEN.replace(
 _UC42 = _C42 + ("create policy s on inbox for select to anon using (true);\n"
                 "create policy u on inbox for update to anon using (true);\n")
 
-_CASES = {"c42": _C42 + _INSERT_OPEN, "d42": _D42 + _INSERT_OPEN, "a42": _A42, "r42": _R42}
+_CASES = {"c42": _C42 + _INSERT_OPEN, "d42": _D42 + _INSERT_OPEN, "a42": _A42, "r42": _R42,
+          # no row-level security at all: the grant lets anon insert, so the 42501 is the CHECK's
+          "c42-rls-off": _C42.replace(_RLS, ""),
+          # the policy reads a stored generated column, which PostgreSQL computes after the
+          # BEFORE triggers and before the policies
+          "c42-generated": _C42.replace(" note text", " ok boolean generated always as (true) stored,"
+                                        " note text") + "create policy i on inbox for insert to anon"
+                                                        " with check (ok);\n"}
 
 
 @pytest.mark.parametrize("op, migration", [("INSERT", text) for text in _CASES.values()]
@@ -589,3 +596,55 @@ def test_a_write_elsewhere_by_a_role_that_bypasses_rls_is_no_answer_from_rls(sta
     code, out, err = _run(tmp_path / "proof", state_dir, _DEFINER + _PROOF.replace("inbox", "posts"))
     assert code == 1, err
     assert _findings(out)["posts"]["results"]["INSERT"]["evidence"]["row"]["note"] == "magic"
+
+
+
+def test_a_write_elsewhere_is_checked_against_the_policies_of_the_role_that_made_it(
+        state_dir, tmp_path):
+    # As above, but the trigger runs as `writer`, a role row-level security applies to, whose
+    # policy on audit lets it in: so audit's own trigger is what refused, not RLS.
+    code, out, err = _run(tmp_path, state_dir, """
+create role writer nologin;
+grant writer to postgres;
+create schema app;
+grant usage, create on schema app to writer;
+grant usage on schema app to anon;  -- so only the role decides what its policy says
+create table app.audit (id bigint generated always as identity primary key, what text);
+grant insert on app.audit to writer;
+alter table app.audit enable row level security;
+create policy "writer logs" on app.audit for insert to writer with check (current_user = 'writer');
+create function app.only_magic() returns trigger language plpgsql as $$
+begin
+  if current_setting('request.method', true) = 'POST' and new.what is distinct from 'magic' then
+    raise exception 'note must be magic' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+create trigger only_magic after insert on app.audit for each row execute function app.only_magic();
+create table posts (id bigint generated always as identity primary key, note text);
+create function app.log_post() returns trigger language plpgsql security definer as $$
+begin
+  insert into app.audit (what) values (new.note);
+  return new;
+end $$;
+alter function app.log_post() owner to writer;
+create trigger log_post after insert on posts for each row execute function app.log_post();
+alter table posts enable row level security;
+create policy "anyone can post" on posts for insert to anon with check (true);
+""")
+    assert code == 2, out
+    assert "posts: INSERT got no answer from row-level security" in err
+
+
+def test_a_write_refused_for_want_of_a_grant_is_protected(state_dir, tmp_path):
+    # No row-level security, but anon may only read: PostgreSQL refuses each write before any
+    # policy or code of the table's runs.
+    code, out, err = _run(tmp_path, state_dir, """
+create table t (id bigint generated always as identity primary key, note text);
+revoke insert, update, delete on t from anon;
+""")
+    assert code == 1, err  # the read is exposed
+    results = _findings(out)["t"]["results"]
+    for op in ("INSERT", "UPDATE", "DELETE"):
+        assert results[op]["outcome"] == "protected", results[op]["basis"]
+        assert "anon has no grant for" in results[op]["basis"]

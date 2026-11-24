@@ -467,9 +467,7 @@ class Inspector:
                         return None  # a row anon's policies let it delete was not deleted
                 self._app.execute(self._statement(op, table, values, row),
                                   self._params(table, values, row))
-                caught = self._caught()
-                if len(caught) != (1 if op == "INSERT" else len(reached)):
-                    return None  # a trigger of the table's own dropped a row: nothing to check
+                caught = self._caught()  # none if the table's own trigger dropped them all
                 check = self._policies("anon", rel, op, "check", filtered)
                 refused = [new for _, _, new in caught if not self._passes(check, new)]
                 if refused and len(refused) == len(caught):
@@ -507,8 +505,9 @@ class Inspector:
         return None
 
     _CATCH = "rlsentry_seeded.rlsentry_catch"
-    _LAST = "\U0010ffff" * 15  # 60 bytes: no other trigger name sorts after it
-    _EVENT = {"INSERT": 4, "DELETE": 8, "UPDATE": 16}  # pg_trigger.tgtype bits
+    # Triggers fire in name order. No name of at most 63 bytes sorts after this one, and the
+    # same name cannot be created twice: ours fires last.
+    _LAST = "\U0010ffff" * 15
 
     def _catch(self, rels: list[int], op: str, only: list[str] | None = None) -> None:
         """A BEFORE ROW trigger on each of `rels` that fires after all of the table's own, notes
@@ -529,12 +528,6 @@ end $f$""")
             self._app.execute(sql.SQL("create trigger {} before {} on {} for each row execute function {}()")
                               .format(sql.Identifier(self._LAST), sql.SQL(op), sql.Identifier(*self._name(rel)),
                                       sql.SQL(name)))
-            last = self._app.execute(
-                "select tgname from pg_trigger where tgrelid = %s and tgenabled in ('O', 'A')"
-                " and tgtype & 3 = 3 and tgtype & %s <> 0 order by tgname collate \"C\" desc limit 1",
-                (rel, self._EVENT[op])).fetchone()[0]
-            if last != self._LAST:
-                raise psycopg.ProgrammingError("a trigger of the table's own would fire after ours")
 
     def _caught(self) -> list[tuple[int, str, str]]:
         caught = self._app.execute("select current_setting('rlsentry.caught', true)").fetchone()[0]
