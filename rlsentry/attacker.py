@@ -1,5 +1,8 @@
 """Every attacking request, made as anon through an AnonChannel, and the verdicts.
 
+A READ is `EXPOSED` only with rows the copy's superuser sees in the table, and `protected` only
+on PostgreSQL's own account of that request (`Inspector.read_refused`). A redirect is no answer.
+
 `protected` is a verdict only when row-level security (or a missing grant) answered. A write's
 refusal (42501, or a 2xx that changed nothing) is RLS's only if PostgreSQL's own account of that
 request says so (`Inspector.rls_refusal`); the error PostgREST returns never does, as the
@@ -18,6 +21,7 @@ from rlsentry.report import Op, OpResult, Outcome
 
 MAX_INSERT_ROWS = 50  # value search bound (brief: 50 per table)
 
+_OPS = {"GET": Op.READ, "POST": Op.INSERT, "PATCH": Op.UPDATE, "DELETE": Op.DELETE}
 _SOURCES = {"policy": "the insert policy's constants", "check": "the CHECK constraints",
             "enum": "the enum labels", "seeded": "the seeded rows", "null": "null"}
 
@@ -35,15 +39,21 @@ class Attacker:
         self._db = inspector
 
     def read(self, table: str) -> OpResult:
+        """EXPOSED only if the superuser holds every row anon received in the table; protected
+        only if PostgreSQL's own account of that very request says no row reached anon, or the
+        grant refused it. The answer's status and body alone never decide."""
         resp = self._send("GET", table, {"select": "*"}, None)
-        if resp.status == 200 and isinstance(resp.body, list):
-            if not resp.body:
-                return OpResult(Op.READ, Outcome.PROTECTED, "anon read 0 rows", None)
-            n = len(resp.body)
+        rows = resp.body if resp.status == 200 and isinstance(resp.body, list) else None
+        if rows:
+            n = len(rows)
+            if not self._db.holds_rows(table, resp.raw):
+                raise _unclean(table, Op.READ, [f"{_answer(resp)} with {n} row(s) the table does "
+                                                "not hold (checked as superuser)"])
             return OpResult(Op.READ, Outcome.EXPOSED, f"anon read {n} row(s)",
-                            {"rows_read": n, "row": resp.body[0]})
-        if _refused(resp):
-            return OpResult(Op.READ, Outcome.PROTECTED, _answer(resp), None)
+                            {"rows_read": n, "row": rows[0]})
+        if (rows == [] or _refused(resp)) and self._db.read_refused(table, resp.request_id):
+            return OpResult(Op.READ, Outcome.PROTECTED,
+                            "anon read 0 rows" if rows == [] else _answer(resp), None)
         raise _unclean(table, Op.READ, [_answer(resp)])
 
     def insert(self, table: str) -> OpResult:
@@ -200,6 +210,10 @@ class Attacker:
         resp = self._channel.request(method, table, query, body)
         if resp.status >= 500:
             raise AttackError(f"{method} {table}: the REST layer failed ({_answer(resp)})")
+        if 300 <= resp.status < 400:  # the channel never follows one: it points off the copy
+            raise AttackError(f"{table}: {_OPS[method].value} was answered with a redirect "
+                              f"({_answer(resp)}), which rlsentry never follows, so it is "
+                              "neither exposed nor protected")
         return resp
 
 

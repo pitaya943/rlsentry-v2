@@ -1,0 +1,16 @@
+PASSED tests/test_answers.py::test_a_read_verdict_rests_on_the_copy_not_on_the_answer[exposed]
+PASSED tests/test_answers.py::test_a_read_verdict_rests_on_the_copy_not_on_the_answer[protected]
+PASSED tests/test_answers.py::test_a_readable_table_is_exposed_whatever_its_columns_write_out_by_the_search_path
+FAILED tests/test_answers.py::test_a_read_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[fabricated-exposed]
+FAILED tests/test_answers.py::test_a_read_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[false-protected]
+FAILED tests/test_answers.py::test_a_write_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[INSERT-for insert to anon with check (public.bounce())]
+FAILED tests/test_answers.py::test_a_write_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[UPDATE-for update to anon using (public.bounce())]
+FAILED tests/test_answers.py::test_a_write_answered_with_a_redirect_gives_no_verdict_and_goes_nowhere[DELETE-for delete to anon using (public.bounce())]
+FAILED tests/test_answers.py::test_the_wait_for_the_rest_layer_follows_no_redirect
+FAILED tests/test_answers.py::test_a_read_verdict_rests_on_the_copy_not_on_the_answer[fabricated]
+FAILED tests/test_answers.py::test_a_read_verdict_rests_on_the_copy_not_on_the_answer[twice]
+FAILED tests/test_answers.py::test_a_read_verdict_rests_on_the_copy_not_on_the_answer[empty-after]
+FAILED tests/test_answers.py::test_a_read_verdict_rests_on_the_copy_not_on_the_answer[empty-alone]
+FAILED tests/test_answers.py::test_a_read_verdict_rests_on_the_copy_not_on_the_answer[42501]
+FAILED tests/test_answers.py::test_a_read_refused_by_the_tables_code_with_the_grants_own_words_is_never_protected
+12 failed, 3 passed in 21.71s

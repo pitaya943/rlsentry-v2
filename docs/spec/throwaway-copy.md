@@ -57,7 +57,8 @@ Docker, other machines) own.
 Given a run,
 when the attacker sends any request,
 then it goes to 127.0.0.1 on the port of the PostgREST this run started, ignoring any proxy
-settings in the environment; and before the first request the run nonce is read back and both
+settings in the environment, and never follows a redirect (a 3xx stops the run with exit 2,
+whatever migration code made PostgREST answer); and before the first request the run nonce is read back and both
 servers are checked to be the ones started. If the nonce is missing or different, or a server
 has died, the run stops with exit 2 before sending anything.
 
@@ -66,6 +67,9 @@ has died, the run stops with exit 2 before sending anything.
 - The copy is PostgreSQL 16 and PostgREST 12.2.3 on random free ports, listening on 127.0.0.1
   only. PostgREST serves schema `public` with `anon` as its anonymous role and a JWT secret made
   for this run (anon-probe, T-01).
+- Every HTTP request rlsentry makes (each attacking request, and the wait for PostgREST to
+  answer before the attack) goes through one opener that uses no proxy and follows no redirect
+  (anon-probe, T-01, T-07).
 - `--backend auto|docker|local`, default `auto`: docker when it can run here, else local, said on
   standard error (anon-probe, T-05).
 - Local backend: `initdb` and `postgres` from `PATH` or `/usr/lib/postgresql/<v>/bin`,
@@ -111,4 +115,4 @@ has died, the run stops with exit 2 before sending anything.
 
 ## Last changed by
 
-anon-probe (T-01, T-05, T-06).
+anon-probe (T-01, T-05, T-06, T-07).

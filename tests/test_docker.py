@@ -418,14 +418,14 @@ def test_writes_rls_refuses_are_protected_on_the_servers_own_account(fake_docker
 
 
 @pytest.mark.parametrize("backend", ["local", "docker"])
-def test_without_the_servers_log_no_write_is_protected(fake_docker, tmp_path, monkeypatch, backend):
+def test_without_the_servers_log_nothing_is_protected(fake_docker, tmp_path, monkeypatch, backend):
     # A server that keeps no jsonlog (as an image or daemon might) gives no account of any
-    # request: the same refusals as above are no answer from row-level security (exit 2),
-    # never `protected`. The server's settings are given on its command line, which nothing
-    # in the database (ALTER SYSTEM included) overrides, so the run itself is what changes.
+    # request: the same refusals as above, and the read that got 0 rows, are no answer from
+    # row-level security (exit 2), never `protected`. The server's settings are given on its
+    # command line, which nothing in the database (ALTER SYSTEM included) overrides, so the run
+    # itself is what changes. Each operation is tried on its own: the first stops a run.
     import rlsentry.sandbox
-    from rlsentry.attack import attack
-    from rlsentry.attacker import AttackError
+    from rlsentry.attacker import Attacker, AttackError
 
     monkeypatch.setitem(rlsentry.sandbox._EVIDENCE_LOG, "log_destination", "stderr")
     monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
@@ -434,12 +434,10 @@ def test_without_the_servers_log_no_write_is_protected(fake_docker, tmp_path, mo
     (folder / "001_t.sql").write_text(_NO_WRITE_POLICY)
     with Sandbox(folder, backend=backend) as sb:
         assert sb._conn.execute("select pg_current_logfile('jsonlog')").fetchone()[0] is None
-        try:
-            got = {op.value: f"{r.outcome.value}: {r.basis}"
-                   for f in attack(sb) for op, r in f.results.items()}
-        except AttackError as err:
-            got = str(err)
-    assert "inbox: INSERT got no answer from row-level security" in got, got
+        attacker = Attacker(sb.anon_channel(), sb.inspector())
+        for op in ("READ", "INSERT", "UPDATE", "DELETE"):
+            with pytest.raises(AttackError, match=f"inbox: {op} got no answer from row-level security"):
+                getattr(attacker, op.lower())("inbox")
 
 
 # The real thing, where a Docker daemon answers (not in the environment this was built in).

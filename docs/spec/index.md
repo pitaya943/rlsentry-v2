@@ -27,7 +27,8 @@ why things are the way they are is in each task's `trail.tsv`.
   Supabase anon key reaches it: through PostgREST, with a JWT whose role claim is `anon` and
   that has no `sub`, so `auth.uid()` is null.
 - **the copy**: the throwaway PostgreSQL 16 + PostgREST 12.2.3 that one run builds on
-  127.0.0.1 and destroys. Nothing else is ever attacked.
+  127.0.0.1 and destroys. Nothing else is ever attacked: rlsentry follows no redirect, so no
+  request leaves it whatever its answer says.
 - **backend**: where the copy's two servers run: `local` (processes on this machine) or
   `docker` (two containers). `auto` picks one.
 - **table**: an ordinary or partitioned table in the `public` schema of the copy. Views and
@@ -36,10 +37,12 @@ why things are the way they are is in each task's `trail.tsv`.
   table.
 - **verdict**: `EXPOSED` or `protected`, one per table and operation. There is no third
   verdict: when a run cannot honestly give one of the two, it stops with exit 2.
-- **EXPOSED**: a real request as anon read rows, or a row was really written, inserted,
-  changed or deleted, as checked afterwards by the copy's superuser.
-- **protected**: anon read nothing, or row-level security (or a missing grant) refused the
-  write, on PostgreSQL's own account of that request.
+- **EXPOSED**: a real request as anon read rows that the copy's superuser then finds in the
+  table, or a row was really inserted, changed or deleted, as checked afterwards by the copy's
+  superuser.
+- **protected**: row-level security (or a missing grant) kept every row from anon's read, or
+  refused the write, on PostgreSQL's own account of that very request. A status code or a body
+  alone never makes an operation `protected`.
 - **basis**: the one line explaining a verdict: the HTTP answer and, for `protected`, what
   refused it (the policy names, "no INSERT policy", another table, or the missing grant).
 - **evidence**: for an `EXPOSED` verdict, the row read, created, changed (before and after) or
@@ -47,8 +50,10 @@ why things are the way they are is in each task's `trail.tsv`.
 - **value search**: after a refused insert, trying further rows built from values the table's
   own definitions name, to find one the insert policy accepts.
 - **PostgreSQL's own account**: the copy's server log (jsonlog with verbose errors, plus
-  auto_explain plans) for the one request asked about, read only by rlsentry's superuser
-  connection. It names the C function that raised each error, which migration SQL cannot forge.
+  auto_explain plans) for the one request asked about (found by the `X-Rlsentry-Request` header
+  rlsentry sends), read only by rlsentry's superuser connection. It names the C function that
+  raised each error, and holds the plan of each statement PostgREST sent with the rows it really
+  reached; migration SQL can forge neither (a `RAISE LOG` is logged as PL/pgSQL's).
 - **the role `postgres`**: the copy's non-superuser role that runs migrations and seeding, shaped
   like hosted Supabase's `postgres` role (owns what migrations create, bypasses RLS, not a
   superuser). The copy's superuser is `supabase_admin`.

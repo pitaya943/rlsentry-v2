@@ -17,6 +17,7 @@ T-01 ─┬─> T-02 (writes) ──┐   (re-cut: T-05 runs after T-02 and T-03
 | T-04 | S-5, S-9 | attacker (value search), sandbox (policy/constraint constants), lab completion | medium |
 | T-05 | (D-1 a; S-8 for docker) | sandbox backend: docker | high |
 | T-06 | S-2, S-4, S-5 | attacker (RLS oracle), sandbox (Inspector policy evaluation) | high |
+| T-07 | S-1, S-2, S-3, S-7 | channel (no redirects), attacker (read), sandbox (Inspector read checks) | high |
 
 The integration test against the lab, compared to `lab/expected.json`, grows with each
 ticket. By T-04 it is S-9's proof.
@@ -26,3 +27,6 @@ ticket. By T-04 it is S-9's proof.
 T-06 was added after T-04 used its three fix rounds (issue #8, owner chose option 1):
 T-04 merged at 981f8f8 with D7-D9 open, and T-06 replaces error-based inference of
 "refused by RLS" with evaluating anon's policies directly.
+
+T-07 was added for fix round 1 of PR #10 (task/anon-probe into main): the verdict at 4c7fccb
+found the channel following redirects (D1) and READ decided from the HTTP body alone (D2).

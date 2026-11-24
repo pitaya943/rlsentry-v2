@@ -1,6 +1,6 @@
 # Design: anon-probe (attack mode)
 
-Status: DRAFT, in discussion with the owner. Decisions still open are marked **D-n**.
+Status: approved, at 0186693. D-1 to D-3 were decided by the owner (trail row 23).
 Brief: `brief.md` (approved at 0186693). Earlier live-probe research: `live-probe-notes.md`.
 
 ## 1. Frame

@@ -1,6 +1,6 @@
 # Brief: anon-probe — attack a disposable copy as the anon visitor
 
-Status: DRAFT, not approved.
+Status: approved, at 0186693 (trail row 19).
 
 First task of the rlsentry chain (see `docs/spec/roadmap.md`). The slug is kept
 from the first draft; this task is the `attack` mode.

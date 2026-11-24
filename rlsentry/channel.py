@@ -2,7 +2,8 @@
 
 Only `Sandbox.anon_channel()` constructs an `AnonChannel` (checked by a source-tree test).
 It takes a port, not a URL, so its address is always 127.0.0.1; before its first request it
-asks the sandbox to confirm the run nonce (design §2).
+asks the sandbox to confirm the run nonce (design §2). It never follows a redirect: a 3xx is
+handed back as it came, so no request leaves the copy whatever its answer says.
 
 Each request carries a header naming it (`Response.request_id`), so the sandbox can find
 PostgreSQL's own account of that request in its log. The channel is also the one source of what
@@ -27,8 +28,19 @@ from typing import Any, Callable
 
 REQUEST_HEADER = "X-Rlsentry-Request"
 
-# No proxy, whatever the environment says: the request must reach the sandbox directly.
-_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A 3xx comes back as an answer (an HTTPError), never as a request to where it points:
+    migration code can make PostgREST answer one (the response.status and response.headers
+    settings), and the request it would send carries the anon token."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+# Every HTTP request rlsentry makes goes through this: no proxy, whatever the environment says,
+# and no redirect, so it reaches the copy's REST layer directly and goes nowhere else.
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
 def anon_jwt(secret: str, lifetime_s: int = 3600) -> str:
@@ -49,6 +61,7 @@ class Response:
     status: int
     body: Any
     request_id: str | None = None
+    raw: bytes = b""  # the body as it came, for checks that must not go through Python's JSON
 
 
 class AnonChannel:
@@ -70,10 +83,12 @@ class AnonChannel:
         req = urllib.request.Request(url, data=data, method=method,
                                      headers=self._headers(data, request_id))
         try:
-            with _opener.open(req, timeout=60) as resp:
-                return Response(resp.status, _json(resp.read()), request_id)
+            with OPENER.open(req, timeout=60) as resp:
+                raw = resp.read()
+                return Response(resp.status, _json(raw), request_id, raw)
         except urllib.error.HTTPError as err:
-            return Response(err.code, _json(err.read()), request_id)
+            raw = err.read()
+            return Response(err.code, _json(raw), request_id, raw)
 
     def settings(self, method: str, table: str, body: Any, request_id: str) -> dict[str, str]:
         """The settings PostgREST 12 made for the request `request()` sent as `request_id`."""

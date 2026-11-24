@@ -81,6 +81,26 @@ when the user runs the attack,
 then the operation is `protected`, and the basis names the policy, or the other table
 (`row-level security on table "audit" refuses the row posts writes there`).
 
+### A read the copy does not confirm is no verdict
+
+Given a READ whose answer is not the copy's as the copy gave it: rows the table does not hold
+(or a real row more times than the table holds it), `[]` or a 42501 that PostgreSQL's log does
+not show for that request (a policy raising 42501 with the grant's own message included), or a
+server that keeps no log,
+when the user runs the attack,
+then the run stops with exit 2: `notes: READ got no answer from row-level security, so it is
+neither exposed nor protected (...)`.
+
+### An answer that points off the copy is never followed
+
+Given a policy that makes PostgREST answer a request with a redirect (it sets
+`response.status` to 302 and `response.headers` to a `Location` elsewhere), on a read or a
+write,
+when the user runs the attack,
+then no request goes where it points, and the run stops with exit 2: `notes: READ was answered
+with a redirect (HTTP 302), which rlsentry never follows, so it is neither exposed nor
+protected`.
+
 ### A missing grant reads protected
 
 Given a table whose privileges anon lacks for an operation (the grant revoked),
@@ -106,8 +126,21 @@ the copy was torn down`, no traceback).
 
 ## Rules
 
-- **READ** is `GET /<table>?select=*`. `EXPOSED` if at least one row comes back; `protected` if
-  0 rows, or a 42501 refusal. Evidence: the count and the first row (anon-probe, T-01).
+- **READ** is `GET /<table>?select=*`. Evidence: the count and the first row (anon-probe, T-01).
+- READ is `EXPOSED` only if rows came back (HTTP 200) and every one of them is a row the copy's
+  superuser sees in the table, each table row counted once. Rows are compared as jsonb (as
+  values: `1e3` is `1000`), written out under PostgREST's search path. Any other row in the
+  answer stops the run with exit 2 (anon-probe, T-07).
+- READ is `protected` only on PostgreSQL's own account of that very request: for an answer of
+  0 rows, auto_explain's plan of PostgREST's read (its one aggregate) shows no row of the table
+  reached it; PostgREST's read has no filter of its own and every table is seeded, so only the
+  policies' USING can do that. For a 42501, the log shows the privilege check
+  (`aclcheck_error`) refused this table at the top level. Neither the status code nor the body
+  decides; without that account the run stops with exit 2. Unlike a write, rlsentry does not
+  also evaluate the SELECT policies itself: the plan is the account of the request as PostgREST
+  made it (anon-probe, T-07).
+- rlsentry never follows a redirect. A 3xx answer to any request (READ or a write) stops the
+  run with exit 2, naming the table and operation (anon-probe, T-07).
 - **INSERT** first sends a fresh fake row unlike every seeded one. `EXPOSED` only if the
   superuser then sees a new row; the evidence is that row as stored, not the row sent
   (anon-probe, T-02, T-04).
@@ -157,4 +190,4 @@ the copy was torn down`, no traceback).
 
 ## Last changed by
 
-anon-probe (T-01, T-02, T-04, T-06).
+anon-probe (T-01, T-02, T-04, T-06, T-07).

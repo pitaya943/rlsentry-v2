@@ -14,7 +14,6 @@ import signal
 import threading
 import time
 import urllib.error
-import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -24,7 +23,7 @@ from psycopg.rows import dict_row
 
 from rlsentry.backends import SIGNALS as _SIGNALS
 from rlsentry.backends import Backend, BuildError, select
-from rlsentry.channel import REQUEST_HEADER, AnonChannel, anon_jwt
+from rlsentry.channel import OPENER, REQUEST_HEADER, AnonChannel, anon_jwt
 from rlsentry.seed import fake_row, seed, update_values
 
 _SETUP_SQL = """
@@ -342,6 +341,27 @@ class Inspector:
                         sql.Identifier("public", table), where),
                 [value] + [str(row[k]) for k in key]).fetchone()[0]
 
+    def holds_rows(self, table: str, raw: bytes) -> bool:
+        """Is every row of `raw` (a JSON array, as the answer carried it) a row of `table` as
+        the superuser sees it, each row of the table counted once? Compared as jsonb, so as
+        values (1000 is 1e3), not as Python reads them; each row is written out under
+        PostgREST's search path, as the answer's were (a regclass names its table by it). Every
+        name in the statement is qualified, so the path cannot bring a migration's code in."""
+        with self._conn.transaction():
+            self._conn.execute("select pg_catalog.set_config('search_path', %s, true)",
+                               [POSTGREST_SEARCH_PATH])
+            return self._conn.execute(sql.SQL(
+                "select not exists (select value from"
+                " pg_catalog.jsonb_array_elements(%s::pg_catalog.jsonb) except all select pg_catalog.to_jsonb(t.*) from {} as t)").format(
+                sql.Identifier("public", table)), [raw.decode()]).fetchone()[0]
+
+    def read_refused(self, table: str, request_id: str | None) -> bool:
+        """Did row-level security (or a missing grant) keep every row of `table` from the GET
+        PostgREST ran as `request_id`? Only PostgreSQL's own account of that request (`_said`)
+        can say yes: a missing grant on this table raised by the privilege check, or the
+        request's plan showing that no row of the table reached it."""
+        return self._said("SELECT", table, request_id) in (("grant", table), ("using", table))
+
     def rls_refusal(self, op: str, table: str, values: dict | None, row: dict | None,
                     settings: dict[str, str], request_id: str | None) -> str | None:
         """Did row-level security (or a missing grant) refuse the write PostgREST ran as
@@ -360,10 +380,11 @@ class Inspector:
         return ours[2]
 
     def _said(self, op: str, table: str, request_id: str | None) -> tuple[str, str] | None:
-        """What PostgreSQL said refused the request: ("grant", table), ("check", the table whose
-        WITH CHECK refused a row) or ("using", table) for no row reached; None for anything
-        else. Raised in the server's C code (the function the log names), which nothing a
-        migration says can do in its stead: a RAISE is logged as PL/pgSQL's."""
+        """What PostgreSQL said refused the request (`op` is SELECT for a GET): ("grant",
+        table), ("check", the table whose WITH CHECK refused a row) or ("using", table) for no
+        row reached; None for anything else. Raised in the server's C code (the function the
+        log names), which nothing a migration says can do in its stead: a RAISE is logged as
+        PL/pgSQL's."""
         entries = self._log.request(request_id)
         error = next((e for e in entries if e.get("error_severity") == "ERROR"), None)
         if error is not None:
@@ -384,8 +405,17 @@ class Inspector:
             return None
         if op == "INSERT" or not entries:
             return None
-        writes = [node for e in entries if e.get("func_name") == "explain_ExecutorEnd"
-                  for node in _nodes(json.loads(e["message"].partition("plan:\n")[2])["Plan"])
+        # auto_explain's own entries (explain_ExecutorEnd: a RAISE is logged as PL/pgSQL's),
+        # one per statement PostgREST sent: nested ones are not logged (superuser-only setting)
+        plans = [json.loads(e["message"].partition("plan:\n")[2])["Plan"] for e in entries
+                 if e.get("func_name") == "explain_ExecutorEnd"]
+        if op == "SELECT":
+            # PostgREST's read is the one aggregate (json_agg) over the table, with no filter
+            # of its own: only the policies' USING can keep a row from it. No row fed it.
+            fed = [n.get("Actual Rows") for p in plans if p.get("Node Type") == "Aggregate"
+                   for n in p.get("Plans", []) if n.get("Parent Relationship") == "Outer"]
+            return ("using", table) if fed == [0] else None
+        writes = [node for plan in plans for node in _nodes(plan)
                   if node.get("Node Type") == "ModifyTable" and node.get("Schema") == "public"
                   and node.get("Relation Name") == table]
         if len(writes) != 1 or writes[0].get("Operation") != op.title():
@@ -932,13 +962,12 @@ def _connect(port: int, backend: Backend) -> psycopg.Connection:
 
 
 def _wait_http(port: int, backend: Backend) -> None:
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = time.monotonic() + 60
     while True:
         if not backend.alive():
             raise BuildError(f"postgrest exited: {backend.log_tail('rest')}")
         try:
-            with opener.open(f"http://127.0.0.1:{port}/", timeout=2) as resp:
+            with OPENER.open(f"http://127.0.0.1:{port}/", timeout=2) as resp:
                 if resp.status == 200:
                     return
         except (urllib.error.URLError, OSError):
