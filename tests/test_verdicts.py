@@ -522,9 +522,10 @@ create policy d on t for delete to anon using (public.record());
         channel = sb.anon_channel()
         for method, body in [("POST", {"note": "x"}), ("PATCH", {"note": "y"}), ("DELETE", None)]:
             sb._conn.execute("truncate seen.settings")
-            channel.request(method, "t", None, body)
+            sent = channel.request(method, "t", None, body)
             seen = sb._conn.execute("select s from seen.settings limit 1").fetchone()[0]
-            want = dict(channel.settings(method, "t", body), search_path=POSTGREST_SEARCH_PATH)
+            want = dict(channel.settings(method, "t", body, sent.request_id),
+                        search_path=POSTGREST_SEARCH_PATH)
             want["request.headers"] = json.loads(want["request.headers"])
             assert seen == want, method
 
@@ -559,6 +560,16 @@ def test_an_update_refused_by_other_code_on_a_row_the_policy_accepts_is_not_prot
     # rows 4 and 5 not been there, the statement would still have been refused.
     code, out, err = _run(tmp_path, state_dir,
                           _SOME.format(check=", check (public.no_two(id))"))
+    assert code == 2, out
+    assert "m: UPDATE got no answer from row-level security" in err
+
+
+def test_an_update_rls_refuses_on_its_first_row_and_other_code_on_a_later_one_is_not_protected(
+        state_dir, tmp_path):
+    # PostgreSQL stops at row 1, refused by the policy; with rows 1 and 2 out of the way, the
+    # CHECK refuses row 4, which the policy accepts. RLS's answer covers only the rows before it.
+    code, out, err = _run(tmp_path, state_dir, _SOME.replace("id = 2", "id = 4").replace(
+        "with check (id <= 3)", "with check (id >= 3)").format(check=", check (public.no_two(id))"))
     assert code == 2, out
     assert "m: UPDATE got no answer from row-level security" in err
 
@@ -648,3 +659,193 @@ revoke insert, update, delete on t from anon;
     for op in ("INSERT", "UPDATE", "DELETE"):
         assert results[op]["outcome"] == "protected", results[op]["basis"]
         assert "anon has no grant for" in results[op]["basis"]
+
+
+# T-06 fix round 1 (PR #9 verdict D1, D2): a policy evaluated anywhere but in the request
+# PostgREST makes can read differently (session_user, current_query(), pg_trigger_depth()...).
+# So `protected` rests on PostgreSQL's own answer to that request, read from the server's log;
+# rlsentry's own evaluation can only take a verdict away.
+# https://github.com/pitaya943/rlsentry-v2/pull/9#issuecomment-7134436890
+
+_VIA_API = """
+create function public.via_api() returns boolean language sql as $$
+  select current_query() like '%pgrst_source%'
+$$;
+"""
+_ONLY_POSTGREST = {  # each is true in the request PostgREST makes, and in no other session
+    "session_user": "session_user = 'authenticator'",
+    "current_query": "public.via_api()",
+}
+_C42_D1 = _VIA_API + _C42 + "create policy i on inbox for insert to anon with check ({});\n"
+# ...with the CHECK forging row-level security's own message
+_FORGED = _C42_D1.replace("'note must be magic'",
+                          "'new row violates row-level security policy for table \"inbox\"'")
+# ...or a trigger whose own insert into the table RLS refuses, unless the row is 'magic'
+_NESTED = _VIA_API + """
+create table inbox (id bigint generated always as identity primary key, note text);
+create function public.echo() returns trigger language plpgsql as $$
+begin
+  if current_user = 'anon' and new.note is distinct from 'magic' then
+    insert into public.inbox (note) values ('blocked');
+  end if;
+  return new;
+end $$;
+create trigger echo after insert on inbox for each row execute function public.echo();
+alter table inbox enable row level security;
+create policy i on inbox for insert to anon with check ({} and note is distinct from 'blocked');
+"""
+
+
+@pytest.mark.parametrize("migration", [_C42_D1, _FORGED, _NESTED], ids=["check", "forged", "nested"])
+@pytest.mark.parametrize("policy", _ONLY_POSTGREST.values(), ids=list(_ONLY_POSTGREST))
+def test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected(state_dir, tmp_path,
+                                                                           policy, migration):
+    # c42 with a policy that lets PostgREST's request through: the 42501 is the CHECK's (or,
+    # nested, RLS's answer to a row the table's own code wrote, not to the one anon sent).
+    code, out, err = _run(tmp_path, state_dir, migration.format(policy))
+    assert code == 2, out
+    assert "inbox: INSERT got no answer from row-level security" in err
+    (tmp_path / "proof").mkdir()
+    code, out, err = _run(tmp_path / "proof", state_dir, migration.format(policy) + _PROOF)
+    assert code == 1, err
+    insert = _findings(out)["inbox"]["results"]["INSERT"]
+    assert insert["outcome"] == "EXPOSED", insert["basis"]
+    assert insert["evidence"]["row"]["note"] == "magic"
+
+
+_D2 = _OK_NOTE + """
+create table audit (id bigint generated always as identity primary key, what text check (public.ok_note(what)));
+alter table audit enable row level security;
+create policy "via triggers only" on audit for insert to anon with check (pg_trigger_depth() > 0);
+create table posts (id bigint generated always as identity primary key, note text);
+create function public.log_post() returns trigger language plpgsql as $$
+begin insert into public.audit (what) values (new.note); return new; end $$;
+create trigger log_post after insert on posts for each row execute function public.log_post();
+alter table posts enable row level security;
+create policy "anyone can post" on posts for insert to anon with check (true);
+"""
+
+
+# ...or also true only in PostgREST's request, and audit's CHECK forges RLS's own message
+_D2_FORGED = _D2.replace("with check (pg_trigger_depth() > 0)",
+                         "with check (pg_trigger_depth() > 0 and session_user = 'authenticator')").replace(
+    "'note must be magic'", "'new row violates row-level security policy for table \"audit\"'")
+
+
+@pytest.mark.parametrize("migration", [_D2, _D2_FORGED], ids=["trigger-depth", "forged"])
+def test_d2_a_policy_elsewhere_true_inside_the_trigger_is_never_protected(state_dir, tmp_path,
+                                                                          migration):
+    # fp2, but audit's policy lets the trigger's row in (depth 1); audit's CHECK refuses it.
+    code, out, err = _run(tmp_path, state_dir, migration)
+    assert code == 2, out
+    assert "posts: INSERT got no answer from row-level security" in err
+    (tmp_path / "proof").mkdir()
+    code, out, err = _run(tmp_path / "proof", state_dir, migration + _PROOF.replace("inbox", "posts"))
+    assert code == 1, err
+    insert = _findings(out)["posts"]["results"]["INSERT"]
+    assert insert["outcome"] == "EXPOSED", insert["basis"]
+    assert insert["evidence"]["row"]["note"] == "magic"
+
+
+_CHANGE = """
+create table inbox (id bigint generated always as identity primary key, note text);
+alter table inbox enable row level security;
+create policy s on inbox for select to anon using (true);
+create policy w on inbox for {op} to anon using ({policy});
+"""
+# What else stops the change once the policy has let it through: a trigger refusing with
+# RLS's own code, a trigger skipping the row (2xx, nothing changed), or a rule (2xx, nothing
+# changed here).
+_STOPS = {
+    "trigger-42501": "create function public.no() returns trigger language plpgsql as $$\n"
+                     "begin raise exception 'no' using errcode = '42501'; end $$;\n"
+                     "create trigger no before {op} on inbox for each row execute function public.no();\n",
+    "trigger-skips": "create function public.no() returns trigger language plpgsql as $$\n"
+                     "begin return null; end $$;\n"
+                     "create trigger no before {op} on inbox for each row execute function public.no();\n",
+    # PostgREST's RETURNING needs the rule to return rows: it changes another table instead
+    "rule": "create table sink (id bigint, note text);\n"
+            "create rule no as on {op} to inbox do instead {op} {sink} where false returning sink.*;\n",
+}
+_SINK = {"update": "sink set note = new.note", "delete": "from sink"}
+
+
+@pytest.mark.parametrize("stop", _STOPS.values(), ids=list(_STOPS))
+@pytest.mark.parametrize("policy", _ONLY_POSTGREST.values(), ids=list(_ONLY_POSTGREST))
+@pytest.mark.parametrize("op", ["UPDATE", "DELETE"])
+def test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected(
+        state_dir, tmp_path, op, policy, stop):
+    migration = _VIA_API + _CHANGE.format(op=op.lower(), policy=policy)
+    code, out, err = _run(tmp_path, state_dir, migration + stop.format(op=op.lower(), sink=_SINK[op.lower()]))
+    assert code == 2, out
+    assert f"inbox: {op} got no answer from row-level security" in err
+    (tmp_path / "proof").mkdir()  # nothing stops it: the policy lets PostgREST's request through
+    code, out, err = _run(tmp_path / "proof", state_dir, migration)
+    assert code == 1, err
+    assert _findings(out)["inbox"]["results"][op]["outcome"] == "EXPOSED"
+
+
+@pytest.mark.parametrize("policy", [
+    "auth.jwt() is null",  # the claims PostgREST sets
+    "auth.jwt() ->> 'exp' is null",
+    "current_user <> 'anon'",
+    "current_setting('request.method', true) is distinct from 'POST'",
+    "current_setting('request.path', true) is distinct from '/inbox'",
+    "(current_setting('request.headers', true)::json ->> 'user-agent') is null"
+    " or (current_setting('request.headers', true)::json ->> 'x-rlsentry-request') is null",
+    "current_setting('request.cookies', true) is distinct from '{}'",
+    "current_setting('search_path') <> '\"public\", \"public\", \"extensions\"'",
+    "ok is distinct from true",  # a stored generated column, computed before the policies
+], ids=["claims", "exp", "role", "method", "path", "headers", "cookies", "search_path",
+        "generated"])
+def test_a_policy_that_refuses_postgrests_request_is_protected(state_dir, tmp_path, policy):
+    # rlsentry's own evaluation can take PostgreSQL's answer away: it must see the request as
+    # PostgREST made it, or a table RLS protects would stop the run.
+    code, out, err = _run(tmp_path, state_dir, f"""
+create table inbox (id bigint generated always as identity primary key, note text,
+                    ok boolean generated always as (true) stored);
+alter table inbox enable row level security;
+create policy i on inbox for insert to anon with check ({policy});
+""")
+    assert code == 0, err
+    insert = _findings(out)["inbox"]["results"]["INSERT"]
+    assert insert["outcome"] == "protected"
+    assert 'policies on inbox: "i"' in insert["basis"]
+
+
+@pytest.mark.parametrize("order", ["rls-first", "check-first"])
+def test_the_answer_read_is_the_one_to_the_request_asked_about(tmp_path, monkeypatch, order):
+    # Two refused requests before rlsentry asks about the second: RLS refuses one ('never'),
+    # the CHECK the other (with RLS's code, and a policy only PostgREST's request passes).
+    from rlsentry.sandbox import Sandbox
+    monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
+    folder = tmp_path / "migrations"
+    folder.mkdir()
+    (folder / "001_t.sql").write_text(_C42_D1.format("session_user = 'authenticator'") +
+                                      "create policy r on inbox as restrictive for insert to anon"
+                                      " with check (note is distinct from 'never');\n")
+    rows = {"rls-first": [{"note": "never"}, {"note": "x"}],
+            "check-first": [{"note": "x"}, {"note": "never"}]}[order]
+    with Sandbox(folder) as sb:
+        channel, db = sb.anon_channel(), sb.inspector()
+        sent = [channel.request("POST", "inbox", None, row) for row in rows]
+        assert [r.body["code"] for r in sent] == ["42501", "42501"]
+        last = sent[-1]
+        said = db.rls_refusal("INSERT", "inbox", rows[-1], None,
+                              channel.settings("POST", "inbox", rows[-1], last.request_id),
+                              last.request_id)
+    if order == "rls-first":
+        assert said is None  # the second answer is the CHECK's
+    else:
+        assert said is not None and '"r"' in said
+
+
+def test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected(state_dir,
+                                                                                tmp_path):
+    # fp2, but posts' policy is true only in PostgREST's request: PostgreSQL's answer is
+    # audit's RLS, inside the trigger; rlsentry's own reading is posts' policy. Neither basis
+    # can be given as PostgreSQL's, so the run stops rather than name a policy it did not apply.
+    code, out, err = _run(tmp_path, state_dir, _FP2.replace(
+        "with check (true)", "with check (session_user = 'authenticator')"))
+    assert code == 2, out
+    assert "posts: INSERT got no answer from row-level security" in err

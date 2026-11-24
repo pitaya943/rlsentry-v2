@@ -1,0 +1,24 @@
+# throwaway copy: rlsentry/ at c3cb785, tests at the fix-round head; the new insert variants and the downgrade-direction test
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 1 == 0
+FAILED tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user-check]
+FAILED tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user-forged]
+FAILED tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user-nested]
+FAILED tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[current_query-check]
+FAILED tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[current_query-forged]
+FAILED tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[current_query-nested]
+FAILED tests/test_verdicts.py::test_a_policy_that_refuses_postgrests_request_is_protected[headers]
+7 failed, 7 passed, 88 deselected in 15.19s
+# throwaway copy: rlsentry/ at c3cb785, tests at the fix-round head: D2 variants and the disagreement test
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+FAILED tests/test_verdicts.py::test_d2_a_policy_elsewhere_true_inside_the_trigger_is_never_protected[trigger-depth]
+FAILED tests/test_verdicts.py::test_d2_a_policy_elsewhere_true_inside_the_trigger_is_never_protected[forged]
+FAILED tests/test_verdicts.py::test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected
+3 failed, 103 deselected in 4.04s
