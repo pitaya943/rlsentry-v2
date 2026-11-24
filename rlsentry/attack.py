@@ -13,10 +13,10 @@ from rlsentry.sandbox import Sandbox
 LAB = Path(__file__).parent / "lab"
 
 
-def run(migrations: Path, source: str) -> RunReport:
+def run(migrations: Path, source: str, backend: str = "local") -> RunReport:
     """Raises BuildError / AttackError (exit 2) or Interrupted."""
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    with Sandbox(migrations) as sandbox:
+    with Sandbox(migrations, backend) as sandbox:
         findings = attack(sandbox)
     return RunReport(source, findings, started_at, __version__)
 

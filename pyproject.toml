@@ -16,7 +16,7 @@ test = ["pytest", "jsonschema"]
 rlsentry = "rlsentry.cli:main"
 
 [tool.setuptools]
-packages = ["rlsentry"]
+packages = ["rlsentry", "rlsentry.backends"]
 
 [tool.setuptools.package-data]
 rlsentry = ["lab/*.sql", "lab/expected.json", "report.schema.json"]

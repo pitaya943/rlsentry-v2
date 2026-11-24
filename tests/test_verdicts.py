@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+import conftest
 from conftest import FIXTURES, residue, run_rlsentry
 
 
@@ -518,7 +519,7 @@ create policy u on t for update to anon using (public.record());
 create policy d on t for delete to anon using (public.record());
 """)
     from rlsentry.sandbox import POSTGREST_SEARCH_PATH
-    with Sandbox(folder) as sb:
+    with Sandbox(folder, conftest.BACKEND) as sb:
         channel = sb.anon_channel()
         for method, body in [("POST", {"note": "x"}), ("PATCH", {"note": "y"}), ("DELETE", None)]:
             sb._conn.execute("truncate seen.settings")
@@ -851,7 +852,7 @@ def test_the_answer_read_is_the_one_to_the_request_asked_about(tmp_path, monkeyp
                                       " with check (note is distinct from 'never');\n")
     rows = {"rls-first": [{"note": "never"}, {"note": "x"}],
             "check-first": [{"note": "x"}, {"note": "never"}]}[order]
-    with Sandbox(folder) as sb:
+    with Sandbox(folder, conftest.BACKEND) as sb:
         channel, db = sb.anon_channel(), sb.inspector()
         sent = [channel.request("POST", "inbox", None, row) for row in rows]
         assert [r.body["code"] for r in sent] == ["42501", "42501"]
@@ -896,13 +897,13 @@ def test_the_log_is_read_up_to_a_line_of_rlsentrys_own(tmp_path):
     # The server writes its log on its own time (the logging collector), so a request's lines
     # can land after rlsentry asks about it: the read waits for a line rlsentry logs then.
     # A real server writes them too soon to lose that race on demand; this one writes late.
+    # It answers the read as the server does: what its jsonlog holds past the offset asked.
     import re
     import threading
     import time
     from rlsentry.sandbox import SUPERUSER, _Log
-    (tmp_path / "log").mkdir()
-    (tmp_path / "current_logfiles").write_text("jsonlog log/server.json\n")
-    (tmp_path / "log" / "server.json").write_text("")
+    log = tmp_path / "server.json"
+    log.write_text("")
     request = [
         {"user": "authenticator", "session_id": "s", "vxid": "3/7", "func_name": "exec_execute_message",
          "message": "execute <unnamed>: select set_config('request.headers', $1, true)",
@@ -913,20 +914,29 @@ def test_the_log_is_read_up_to_a_line_of_rlsentrys_own(tmp_path):
     ]
 
     class Server:
-        def execute(self, statement):
+        def execute(self, statement, params=None):
+            if "pg_read_binary_file" in statement:
+                return Rows([log.read_bytes()[params[0]:]])
             token = re.search(r"read the log up to here (\w+)", statement)[1]
             mine = {"user": SUPERUSER, "message": f"rlsentry: read the log up to here {token}"}
 
             def write_late():
                 time.sleep(0.5)
-                with open(tmp_path / "log" / "server.json", "a") as f:
+                with open(log, "a") as f:
                     f.writelines(json.dumps(e) + "\n" for e in request + [mine])
             writers.append(threading.Thread(target=write_late))
             writers[-1].start()
 
+    class Rows:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
     writers = []
     try:
-        assert _Log(tmp_path, Server()).request("abc") == request
+        assert _Log(Server()).request("abc") == request
     finally:
         for writer in writers:
             writer.join()
@@ -936,7 +946,7 @@ def test_the_requests_plan_holds_only_its_own_statements_write(tmp_path, monkeyp
     # A trigger's own write to the table is planned, but not logged (auto_explain's
     # log_nested_statements, superuser-only, is off): so the request's plans hold one write,
     # PostgREST's, and which of several to read never comes up (PR #9 verdict at 30393ee).
-    from rlsentry.sandbox import Sandbox
+    from rlsentry.sandbox import Sandbox, _nodes
     monkeypatch.setenv("RLSENTRY_STATE_DIR", str(tmp_path / "state"))
     folder = tmp_path / "migrations"
     folder.mkdir()
@@ -950,7 +960,7 @@ alter table inbox enable row level security;
 create policy s on inbox for select to anon using (true);
 create policy w on inbox for update to anon using (true);
 """)
-    with Sandbox(folder) as sb:
+    with Sandbox(folder, conftest.BACKEND) as sb:
         channel = sb.anon_channel()
         sent = channel.request("PATCH", "inbox", None, {"note": "changed"})
         assert 200 <= sent.status < 300
@@ -959,9 +969,3 @@ create policy w on inbox for update to anon using (true);
              if e.get("func_name") == "explain_ExecutorEnd"]
     writes = [n for p in plans for n in _nodes(p) if n.get("Node Type") == "ModifyTable"]
     assert len(writes) == 1, writes
-
-
-def _nodes(plan):
-    yield plan
-    for child in plan.get("Plans", []):
-        yield from _nodes(child)

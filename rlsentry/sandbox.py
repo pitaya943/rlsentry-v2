@@ -1,23 +1,16 @@
 """The disposable copy: built, seeded, handed to the attacker as an AnonChannel, destroyed.
 
-Everything a run starts is recorded in a marker file under the state dir (the local
-backend's "label", design §3). Teardown runs in `finally`, on SIGINT/SIGTERM, and every run
-starts by sweeping markers whose owning process is gone (covers `kill -9`).
+Its servers run on a backend (`rlsentry.backends`: local processes or docker containers).
+Teardown runs in `finally`, on SIGINT/SIGTERM, and every run starts with the backend
+sweeping what killed runs left (covers `kill -9`).
 """
 
 from __future__ import annotations
 
-import glob
 import json
-import os
-import pwd
 import re
 import secrets
-import shutil
 import signal
-import socket
-import subprocess
-import tempfile
 import threading
 import time
 import urllib.error
@@ -29,10 +22,10 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 
+from rlsentry.backends import SIGNALS as _SIGNALS
+from rlsentry.backends import Backend, BuildError, select
 from rlsentry.channel import REQUEST_HEADER, AnonChannel, anon_jwt
 from rlsentry.seed import fake_row, seed, update_values
-
-_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
 _SETUP_SQL = """
 create role anon nologin noinherit;
@@ -119,63 +112,35 @@ $$;
 # a migration's function named like a built-in is never called by it.
 SCHEMAS_ON_PATH = "public, extensions"
 POSTGREST_SEARCH_PATH = '"public", "public", "extensions"'  # db-schemas, then the extra path
-SUPERUSER = "supabase_admin"
+SUPERUSER = "supabase_admin"  # the cluster's superuser: every backend creates the cluster with it
 # PostgreSQL's own account of each request PostgREST makes, in a log only the sandbox reads
 # (Evidence): each error with the C function that raised it, and each statement's plan with the
 # rows it really reached. authenticator's settings (_SETUP_SQL) turn the logging on for its
-# sessions alone; none of them can be changed by a role that is not a superuser.
-_EVIDENCE_LOG = ["-c", "logging_collector=on", "-c", "log_destination=jsonlog",
-                 "-c", "log_directory=log", "-c", "log_rotation_age=0", "-c", "log_rotation_size=0",
-                 "-c", "log_error_verbosity=verbose", "-c", "shared_preload_libraries=auto_explain"]
+# sessions alone; none of them can be changed by a role that is not a superuser. The log is a
+# file in the cluster's data directory, read over the superuser's connection (`_Log`), so it is
+# read the same way whichever backend runs the server.
+_EVIDENCE_LOG = {"logging_collector": "on", "log_destination": "jsonlog", "log_directory": "log",
+                 "log_rotation_age": "0", "log_rotation_size": "0",
+                 "log_error_verbosity": "verbose", "shared_preload_libraries": "auto_explain"}
 # For each statement on the postgres connection: a migration's function that never returns
 # (a domain CHECK, a trigger) stops the run instead of hanging it.
 STATEMENT_TIMEOUT = "30s"
-
-
-class BuildError(Exception):
-    """The copy could not be built (or stopped being the copy we built)."""
 
 
 class Interrupted(BaseException):
     """SIGINT or SIGTERM arrived during a run. BaseException so no `except Exception` eats it."""
 
 
-def state_dir() -> Path:
-    if os.environ.get("RLSENTRY_STATE_DIR"):
-        return Path(os.environ["RLSENTRY_STATE_DIR"])
-    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    return Path(base) / "rlsentry"
-
-
-def sweep_stale() -> list[str]:
-    """Destroy what runs whose rlsentry process is gone left behind. Returns their run ids."""
-    swept = []
-    for marker in sorted(state_dir().glob("*.json")):
-        try:
-            info = json.loads(marker.read_text())
-        except (OSError, ValueError):
-            continue
-        if _running(info["owner_pid"]):
-            continue
-        for pid in info.get("pids", []):  # postgres first, as in teardown
-            _stop_foreign(pid, info["run_dir"])
-        shutil.rmtree(info["run_dir"], ignore_errors=True)
-        marker.unlink(missing_ok=True)
-        swept.append(info["run_id"])
-    return swept
-
-
 class Sandbox:
     """Use as a context manager; `anon_channel()` is available only while running."""
 
-    def __init__(self, migrations: Path):
+    def __init__(self, migrations: Path, backend: str = "local"):
         self._migrations = migrations
+        self._backend_name = backend
+        self._backend: Backend | None = None
         self._run_id = secrets.token_hex(6)
         self._nonce = secrets.token_hex(16)
         self._jwt_secret = secrets.token_urlsafe(48)
-        self._marker = state_dir() / f"{self._run_id}.json"
-        self._run_dir: Path | None = None
-        self._procs: list[tuple[subprocess.Popen, signal.Signals]] = []
         self._conn: psycopg.Connection | None = None  # superuser: setup, nonce, checks
         self._app: psycopg.Connection | None = None   # postgres: anything running migration code
         self._log: _Log | None = None
@@ -191,7 +156,8 @@ class Sandbox:
     def __enter__(self) -> "Sandbox":
         self._install_signal_handlers()
         try:
-            sweep_stale()
+            self._backend = select(self._backend_name, self._run_id)
+            self._backend.sweep()
             self._build()
         except BaseException:
             self.teardown()
@@ -211,12 +177,8 @@ class Sandbox:
                     except psycopg.Error:
                         pass
             self._app = self._conn = None
-            for proc, sig in self._procs:  # postgres first: ends in-flight queries, so PostgREST can stop
-                _stop_child(proc, sig)
-            self._procs.clear()
-            if self._run_dir is not None:
-                shutil.rmtree(self._run_dir, ignore_errors=True)
-            self._marker.unlink(missing_ok=True)
+            if self._backend is not None:
+                self._backend.stop()
         self._restore_signal_handlers()
 
     def anon_channel(self) -> AnonChannel:
@@ -244,35 +206,11 @@ class Sandbox:
     # build (design §3)
 
     def _build(self) -> None:
-        bins = _find_binaries()
-        self._user = _unprivileged_user()
-        with _signals_blocked():
-            base = "/tmp" if os.geteuid() == 0 else tempfile.gettempdir()
-            self._run_dir = Path(tempfile.mkdtemp(prefix="rlsentry-run-", dir=base))
-            self._write_marker()
-        if self._user:
-            os.chown(self._run_dir, self._user.pw_uid, self._user.pw_gid)
-
-        data = self._run_dir / "data"
-        init = subprocess.run(
-            [bins["initdb"], "-D", str(data), "-U", SUPERUSER, "--auth=trust", "-E", "UTF8",
-             "--no-sync", "--no-instructions"],
-            capture_output=True, text=True, **self._as_user(),
-        )
-        if init.returncode != 0:
-            raise BuildError(f"initdb failed: {init.stderr.strip()}")
-
-        pg_port = _free_port()
-        pg = self._spawn(
-            [bins["postgres"], "-D", str(data), "-p", str(pg_port),
-             "-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories=",
-             "-c", f'search_path="$user", {SCHEMAS_ON_PATH}',
-             "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off",
-             *_EVIDENCE_LOG],
-            "postgres.log", signal.SIGINT,  # SIGINT = fast shutdown
-        )
-        self._conn = _connect(pg_port, pg, self._run_dir / "postgres.log")
-        self._log = _Log(data, self._conn)
+        pg_port = self._backend.start_db(SUPERUSER, {"search_path": f'"$user", {SCHEMAS_ON_PATH}',
+                                                     "fsync": "off", "synchronous_commit": "off",
+                                                     "full_page_writes": "off", **_EVIDENCE_LOG})
+        self._conn = _connect(pg_port, self._backend)
+        self._log = _Log(self._conn)
         self._conn.execute(_SETUP_SQL)
         self._apply_migrations(pg_port)
         self._app = psycopg.connect(host="127.0.0.1", port=pg_port, user="postgres",
@@ -282,22 +220,14 @@ class Sandbox:
         self._snapshot()
         self._conn.execute("insert into rlsentry_run.nonce values (%s)", (self._nonce,))
 
-        self._rest_port = _free_port()
-        conf = self._run_dir / "postgrest.conf"
-        conf.write_text(
-            f'db-uri = "postgres://authenticator@127.0.0.1:{pg_port}/postgres"\n'
-            'db-schemas = "public"\n'
-            f'db-extra-search-path = "{SCHEMAS_ON_PATH}"\n'
-            'db-anon-role = "anon"\n'
-            f'jwt-secret = "{self._jwt_secret}"\n'
-            'server-host = "127.0.0.1"\n'
-            f"server-port = {self._rest_port}\n"
-            'log-level = "error"\n'
-        )
-        if self._user:
-            os.chown(conf, self._user.pw_uid, self._user.pw_gid)
-        rest = self._spawn([bins["postgrest"], str(conf)], "postgrest.log", signal.SIGTERM)
-        _wait_http(self._rest_port, rest, self._run_dir / "postgrest.log")
+        self._rest_port = self._backend.start_rest("authenticator", {
+            "db-schemas": "public",
+            "db-extra-search-path": SCHEMAS_ON_PATH,
+            "db-anon-role": "anon",
+            "jwt-secret": self._jwt_secret,
+            "log-level": "error",
+        })
+        _wait_http(self._rest_port, self._backend)
         self._running = True
 
     def _apply_migrations(self, port: int) -> None:
@@ -345,42 +275,13 @@ class Sandbox:
 
     def _verify(self) -> None:
         """Called by the channel before its first request: is this still our copy?"""
-        if not self._running or any(p.poll() is not None for p, _ in self._procs):
+        if not self._running or not self._backend.alive():
             raise BuildError("sandbox is not running")
         row = self._conn.execute("select value from rlsentry_run.nonce").fetchone()
         if row is None or row[0] != self._nonce:
             raise BuildError("run nonce missing or different; refusing to attack")
 
-    # processes and markers
-
-    def _as_user(self) -> dict:
-        kw = {"cwd": str(self._run_dir), "env": {"PATH": os.environ.get("PATH", ""), "LANG": "C.UTF-8"}}
-        if self._user:
-            kw.update(user=self._user.pw_uid, group=self._user.pw_gid, extra_groups=[])
-        return kw
-
-    def _spawn(self, argv: list[str], log_name: str, stop_signal: signal.Signals) -> subprocess.Popen:
-        log = open(self._run_dir / log_name, "wb")
-        with _signals_blocked():
-            # The child must not inherit the blocked mask, or it would ignore our stop signal.
-            proc = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT,
-                                    start_new_session=True, preexec_fn=_unblock_signals,
-                                    **self._as_user())
-            self._procs.append((proc, stop_signal))
-            self._write_marker()
-        log.close()
-        return proc
-
-    def _write_marker(self) -> None:
-        self._marker.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._marker.with_suffix(".tmp")
-        tmp.write_text(json.dumps({
-            "run_id": self._run_id,
-            "owner_pid": os.getpid(),
-            "run_dir": str(self._run_dir),
-            "pids": [p.pid for p, _ in self._procs],
-        }))
-        tmp.replace(self._marker)
+    # signals
 
     def _install_signal_handlers(self) -> None:
         if threading.current_thread() is not threading.main_thread():
@@ -837,12 +738,16 @@ end $f$""")
 class _Log:
     """The server's own log (jsonlog), which only the sandbox reads: PostgreSQL's account of
     each request PostgREST makes. authenticator's sessions log each statement they run, its
-    plan with the rows it really reached, and each error with the C function that raised it."""
+    plan with the rows it really reached, and each error with the C function that raised it.
+
+    The file is in the cluster's data directory, wherever the backend runs the server (in a
+    container, on the docker backend), so the server reads it out over the superuser's
+    connection: the same route on every backend, and none that the role `postgres` can take."""
 
     _SYNC = "rlsentry: read the log up to here "
 
-    def __init__(self, data: Path, conn: psycopg.Connection):
-        self._data, self._conn = data, conn
+    def __init__(self, conn: psycopg.Connection):
+        self._conn = conn
         self._offset, self._partial = 0, b""
 
     def request(self, request_id: str | None) -> list[dict]:
@@ -862,17 +767,16 @@ class _Log:
                 and (e.get("session_id"), e.get("vxid")) in named]
 
     def _since_last_call(self) -> list[dict]:
-        """Everything logged since the last call. A line of ours, logged now, comes after every
-        line of a request already answered: wait for it."""
+        """Everything logged since the last call; [] if the server keeps no jsonlog (then
+        nothing it says can be read, and no refusal is RLS's). A line of ours, logged now,
+        comes after every line of a request already answered: wait for it."""
         token = secrets.token_hex(8)
         self._conn.execute(f"do $$ begin raise log '{self._SYNC}{token}'; end $$")
         entries, deadline = [], time.monotonic() + 30
         while True:
-            current = (self._data / "current_logfiles").read_text().split()
-            path = self._data / current[current.index("jsonlog") + 1]
-            with open(path, "rb") as f:
-                f.seek(self._offset)
-                chunk = f.read()
+            chunk = self._read()
+            if chunk is None:
+                return []
             self._offset += len(chunk)
             *lines, self._partial = (self._partial + chunk).split(b"\n")
             for line in lines:
@@ -883,6 +787,12 @@ class _Log:
             if time.monotonic() > deadline:
                 raise BuildError("the server's log stopped growing")
             time.sleep(0.01)
+
+    def _read(self) -> bytes | None:
+        """What the jsonlog holds past the offset read so far; None if there is no jsonlog."""
+        return self._conn.execute(
+            "select pg_read_binary_file(f, %s, greatest((pg_stat_file(f)).size - %s, 0))"
+            " from pg_current_logfile('jsonlog') as f", (self._offset, self._offset)).fetchone()[0]
 
 
 def _nodes(plan: dict):
@@ -1006,73 +916,27 @@ def _stored_columns(conn: psycopg.Connection, table: str) -> list[str]:
         " and attnum > 0 and not attisdropped and attgenerated = '' order by attnum", (table,))]
 
 
-def _find_binaries() -> dict[str, str]:
-    found, missing = {}, []
-    pg_dirs = sorted(glob.glob("/usr/lib/postgresql/*/bin"),
-                     key=lambda d: int(Path(d).parent.name) if Path(d).parent.name.isdigit() else 0,
-                     reverse=True)
-    for name in ("initdb", "postgres"):
-        path = shutil.which(name) or next(
-            (os.path.join(d, name) for d in pg_dirs if os.access(os.path.join(d, name), os.X_OK)), None)
-        if path:
-            found[name] = path
-        else:
-            missing.append(f"PostgreSQL ({name})")
-    if shutil.which("postgrest"):
-        found["postgrest"] = shutil.which("postgrest")
-    else:
-        missing.append("PostgREST (postgrest)")
-    if missing:
-        raise BuildError("missing on this machine: " + ", ".join(missing))
-    return found
-
-
-def _unprivileged_user() -> pwd.struct_passwd | None:
-    """PostgreSQL refuses to run as root; then run it as `postgres` (or nobody)."""
-    if os.geteuid() != 0:
-        return None
-    for name in ("postgres", "nobody"):
-        try:
-            return pwd.getpwnam(name)
-        except KeyError:
-            continue
-    raise BuildError("running as root and no unprivileged user (postgres, nobody) to run PostgreSQL as")
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def _log_tail(path: Path) -> str:
-    try:
-        return path.read_text(errors="replace").strip()[-800:]
-    except OSError:
-        return ""
-
-
-def _connect(port: int, proc: subprocess.Popen, log: Path) -> psycopg.Connection:
-    deadline = time.monotonic() + 30
+def _connect(port: int, backend: Backend) -> psycopg.Connection:
+    deadline = time.monotonic() + 60
     while True:
-        if proc.poll() is not None:
-            raise BuildError(f"postgres exited: {_log_tail(log)}")
+        if not backend.alive():
+            raise BuildError(f"postgres exited: {backend.log_tail('db')}")
         try:
             return psycopg.connect(host="127.0.0.1", port=port, user=SUPERUSER, dbname="postgres",
                                    autocommit=True, connect_timeout=2,
                                    options="-c search_path=pg_catalog")
         except psycopg.OperationalError:
             if time.monotonic() > deadline:
-                raise BuildError(f"postgres did not accept connections: {_log_tail(log)}")
+                raise BuildError(f"postgres did not accept connections: {backend.log_tail('db')}")
             time.sleep(0.1)
 
 
-def _wait_http(port: int, proc: subprocess.Popen, log: Path) -> None:
+def _wait_http(port: int, backend: Backend) -> None:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 60
     while True:
-        if proc.poll() is not None:
-            raise BuildError(f"postgrest exited: {_log_tail(log)}")
+        if not backend.alive():
+            raise BuildError(f"postgrest exited: {backend.log_tail('rest')}")
         try:
             with opener.open(f"http://127.0.0.1:{port}/", timeout=2) as resp:
                 if resp.status == 200:
@@ -1080,69 +944,8 @@ def _wait_http(port: int, proc: subprocess.Popen, log: Path) -> None:
         except (urllib.error.URLError, OSError):
             pass
         if time.monotonic() > deadline:
-            raise BuildError(f"postgrest did not become ready: {_log_tail(log)}")
+            raise BuildError(f"postgrest did not become ready: {backend.log_tail('rest')}")
         time.sleep(0.1)
-
-
-def _stop_child(proc: subprocess.Popen, sig: signal.Signals) -> None:
-    if proc.poll() is None:
-        proc.send_signal(sig)
-        try:
-            proc.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-
-
-def _cmdline(pid: int) -> str:
-    try:
-        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
-    except OSError:
-        return ""
-
-
-def _running(pid: int) -> bool:
-    """Alive and not a zombie."""
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text()
-    except OSError:
-        return False
-    return stat.rsplit(")", 1)[1].split()[0] != "Z"
-
-
-def _stop_foreign(pid: int, run_dir: str) -> None:
-    """Stop a process from a dead run, only if its command line still names that run's dir."""
-    if run_dir not in _cmdline(pid):
-        return
-    sig = signal.SIGINT if "postgres" in os.path.basename(_cmdline(pid).split(" ")[0]) else signal.SIGTERM
-    try:
-        os.kill(pid, sig)
-    except ProcessLookupError:
-        return
-    deadline = time.monotonic() + 15
-    while run_dir in _cmdline(pid) and time.monotonic() < deadline:
-        time.sleep(0.1)
-    if run_dir in _cmdline(pid):
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-
-
-def _unblock_signals() -> None:
-    signal.pthread_sigmask(signal.SIG_UNBLOCK, _SIGNALS)
-
-
-@contextmanager
-def _signals_blocked():
-    if threading.current_thread() is not threading.main_thread():
-        yield
-        return
-    old = signal.pthread_sigmask(signal.SIG_BLOCK, _SIGNALS)
-    try:
-        yield
-    finally:
-        signal.pthread_sigmask(signal.SIG_SETMASK, old)
 
 
 @contextmanager
