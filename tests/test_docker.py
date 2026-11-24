@@ -1,8 +1,9 @@
 """D-1 (a) and S-8 on the docker backend.
 
-There is no Docker daemon where these tests were written, so most of them run against
-tests/fakedocker.py: the docker CLI and daemon played by local PostgreSQL and PostgREST
-processes. The last test runs against a real daemon when one answers.
+Most of them run against tests/fakedocker.py: the docker CLI and daemon played by local
+PostgreSQL and PostgREST processes, so that failures a real daemon cannot be made to show
+(a slow `docker run`, a flaky `rm`, a daemon that dies) can be tested. The tests marked
+`real_docker`, at the end, run on a real daemon, and only with `--rlsentry-backend docker`.
 """
 
 import json
@@ -440,17 +441,10 @@ def test_without_the_servers_log_nothing_is_protected(fake_docker, tmp_path, mon
                 getattr(attacker, op.lower())("inbox")
 
 
-# The real thing, where a Docker daemon answers (not in the environment this was built in).
+# The real thing: only with `pytest --rlsentry-backend docker`, which makes a real daemon and
+# both images ready (tests/realdocker.py) and fails these tests if it cannot.
 
-def _real_daemon():
-    try:
-        return subprocess.run(["docker", "version", "--format", "{{.Server.Version}}"],
-                              capture_output=True, timeout=30).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
-@pytest.mark.skipif(not _real_daemon(), reason="no Docker daemon answers here")
+@pytest.mark.real_docker
 def test_lab_on_a_real_docker_daemon_matches_expected_and_leaves_nothing(tmp_path, monkeypatch):
     from rlsentry.attack import LAB, attack
 

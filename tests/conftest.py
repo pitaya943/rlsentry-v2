@@ -11,20 +11,46 @@ from pathlib import Path
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
-# The backend for runs whose test names none: `pytest --rlsentry-backend docker` runs them on
-# tests/fakedocker.py (one stand-in daemon for the session) instead of the local backend.
+# The backend for runs whose test names none:
+#   local       the default: local PostgreSQL and PostgREST processes; no Docker at all.
+#   fakedocker  tests/fakedocker.py, one stand-in daemon for the session.
+#   docker      the real Docker daemon, made ready by tests/realdocker.py (started if none
+#               answers, images pulled with mirror fallback). Only this option runs the tests
+#               marked `real_docker`; under the others they skip, so the default command never
+#               starts a daemon or pulls an image, and the stand-in is never taken for the
+#               real thing.
 BACKEND = "local"
+# What rlsentry is told (`--backend`): the stand-in and the real daemon are both `docker` to it.
+RUN_BACKEND = "local"
+REAL_DOCKER_COMMAND = "python3 -m pytest -q --rlsentry-backend docker"
+# Under `docker`: what tests/realdocker.py did (for the report header), or why it could not.
+REAL_DOCKER_LINES = []
+REAL_DOCKER_ERROR = None
 
 
 def pytest_addoption(parser):
-    parser.addoption("--rlsentry-backend", choices=("local", "docker"), default="local",
-                     help="backend for the runs a test does not give one (docker: tests/fakedocker.py)")
+    parser.addoption("--rlsentry-backend", choices=("local", "fakedocker", "docker"),
+                     default="local",
+                     help="backend for the runs a test does not give one: local processes "
+                          "(default), fakedocker (tests/fakedocker.py), or docker (a real "
+                          "daemon, started if none answers)")
 
 
 def pytest_configure(config):
-    global BACKEND
+    global BACKEND, RUN_BACKEND, REAL_DOCKER_LINES, REAL_DOCKER_ERROR
+    config.addinivalue_line("markers", "real_docker: needs a real Docker daemon; runs only "
+                                       "with --rlsentry-backend docker")
     BACKEND = config.getoption("--rlsentry-backend")
+    RUN_BACKEND = "local" if BACKEND == "local" else "docker"
     if BACKEND == "docker":
+        import realdocker
+        try:
+            REAL_DOCKER_LINES = realdocker.ensure(say=lambda line: None)
+        except realdocker.NotReady as e:
+            REAL_DOCKER_ERROR = str(e)
+        except (OSError, subprocess.SubprocessError) as e:
+            REAL_DOCKER_ERROR = f"{type(e).__name__}: {e}"
+    if BACKEND == "fakedocker":
         root = Path(tempfile.mkdtemp(prefix="fakedocker-session-"))
         config.add_cleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         docker_dir, bin_dir = install_fake_docker(root)
@@ -32,6 +58,32 @@ def pytest_configure(config):
         os.environ["FAKE_DOCKER_DIR"] = str(docker_dir)
         os.environ.pop("DOCKER_HOST", None)
         os.environ.pop("FAKE_DOCKER_FAIL", None)
+
+
+def pytest_report_header(config):
+    if BACKEND != "docker":
+        return None
+    if REAL_DOCKER_ERROR:
+        return [f"real Docker: NOT READY: {REAL_DOCKER_ERROR}"]
+    return [f"real Docker: {line}" for line in REAL_DOCKER_LINES]
+
+
+def pytest_collection_modifyitems(config, items):
+    if BACKEND == "docker":
+        return
+    skip = pytest.mark.skip(reason=f"needs a real Docker daemon: run `{REAL_DOCKER_COMMAND}`")
+    for item in items:
+        if item.get_closest_marker("real_docker"):
+            item.add_marker(skip)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_call(item):
+    # Under `docker`, a daemon or image that could not be made ready fails the test (in its
+    # call phase, so it counts as failed, not as an error): a skip here would let the
+    # real-daemon check pass without having run.
+    if BACKEND == "docker" and REAL_DOCKER_ERROR and item.get_closest_marker("real_docker"):
+        pytest.fail(f"the real Docker daemon is not ready: {REAL_DOCKER_ERROR}", pytrace=False)
 
 
 def install_fake_docker(root):
@@ -50,11 +102,11 @@ def state_dir(tmp_path):
 
 
 def rlsentry(*args, state_dir, **kw):
-    """Start `rlsentry` as a separate process with its own state dir; on BACKEND (local unless
-    pytest is told otherwise) unless the arguments name one."""
+    """Start `rlsentry` as a separate process with its own state dir; on RUN_BACKEND (local
+    unless pytest is told otherwise) unless the arguments name one."""
     env = dict(os.environ, RLSENTRY_STATE_DIR=str(state_dir))
     if args[:1] == ("attack",) and "--backend" not in args:
-        args = ("attack", "--backend", BACKEND, *args[1:])
+        args = ("attack", "--backend", RUN_BACKEND, *args[1:])
     return subprocess.Popen([sys.executable, "-m", "rlsentry", *args], env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kw)
 
