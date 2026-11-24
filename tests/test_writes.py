@@ -65,7 +65,7 @@ def test_every_table_is_back_at_its_seeded_state_after_the_attack(tmp_path, monk
         seeded = {t: _contents(db, t) for t in sb.tables}
         assert all(len(rows) == 5 for rows in seeded.values())
         findings = attack(sb)
-        assert sum(r.outcome.value == "EXPOSED" for f in findings for r in f.results.values()) == 8
+        assert sum(r.outcome.value == "EXPOSED" for f in findings for r in f.results.values()) == 9
         assert {t: _contents(db, t) for t in sb.tables} == seeded
 
 
