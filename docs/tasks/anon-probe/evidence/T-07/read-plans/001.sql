@@ -1,0 +1,17 @@
+create table nopol (id bigint generated always as identity primary key, body text);
+alter table nopol enable row level security;
+create table falsepol (id bigint generated always as identity primary key, body text);
+alter table falsepol enable row level security;
+create policy f on falsepol for select to anon using (false);
+create table truepol (id bigint generated always as identity primary key, body text);
+alter table truepol enable row level security;
+create policy f on truepol for select to anon using (true);
+create table owner (id bigint generated always as identity primary key, user_id uuid, body text);
+alter table owner enable row level security;
+create policy f on owner for select to anon using (auth.uid() = user_id);
+create table nogrant (id bigint generated always as identity primary key, body text);
+revoke select on nogrant from anon;
+create function public.yes() returns boolean language plpgsql as $$ begin return true; end $$;
+create table fnpol (id bigint generated always as identity primary key, body text);
+alter table fnpol enable row level security;
+create policy f on fnpol for select to anon using (public.yes() and false);

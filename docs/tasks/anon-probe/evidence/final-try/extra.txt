@@ -1,0 +1,66 @@
+# Cases the tests do not cover, run for the final report at 73ba666 (local backend). Each folder's migration is shown, then the run.
+
+## view
+create table secrets (id bigint generated always as identity primary key, s text not null);
+alter table secrets enable row level security;
+create view secrets_v as select * from secrets;
+$ rlsentry attack --backend local --migrations view
+rlsentry 0.1.0 attack on view (2026-11-24T20:11:17+00:00)
+
+public.secrets
+  READ: protected - anon read 0 rows
+  INSERT: protected (6 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "secrets"; row-level security refuses the new row (anon has no INSERT policy on secrets)
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on secrets); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on secrets))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on secrets); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on secrets))
+  note: seeded 5 rows
+
+0 exposed operation(s) in 1 table(s).
+[exit 0]
+
+## begin
+begin;
+create table a (id bigint generated always as identity primary key, n text);
+commit;
+create table b (id bigint generated always as identity primary key, x storage.nope);
+$ rlsentry attack --backend local --migrations begin
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 4: schema "storage" does not exist
+[exit 2]
+
+## domain
+create domain email as text check (value like '%@%');
+create table people (id bigint generated always as identity primary key, e email not null);
+alter table people enable row level security;
+$ rlsentry attack --backend local --migrations domain
+rlsentry: could not build or attack the copy: could not seed public.people: no fake value for column(s) e (email)
+[exit 2]
+
+## hdr
+create table posts (id bigint generated always as identity primary key, note text);
+alter table posts enable row level security;
+create policy "only with header" on posts for insert to anon
+  with check ((current_setting('request.headers', true)::json ->> 'x-secret') = 'open-sesame');
+$ rlsentry attack --backend local --migrations hdr
+rlsentry 0.1.0 attack on hdr (2026-11-24T20:11:20+00:00)
+
+public.posts
+  READ: protected - anon read 0 rows
+  INSERT: protected (7 rows tried) - HTTP 401 42501: new row violates row-level security policy for table "posts"; row-level security refuses the new row (refused by anon's INSERT policies on posts: "only with header")
+  UPDATE: protected - no row changed, confirmed as superuser (PATCH by primary key: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on posts); PATCH without a filter: HTTP 204, row-level security lets it reach no row (anon has no UPDATE policy on posts))
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on posts); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on posts))
+  note: seeded 5 rows
+
+0 exposed operation(s) in 1 table(s).
+[exit 0]
+
+## empty
+$ rlsentry attack --backend local --migrations empty
+rlsentry: could not build or attack the copy: no .sql migrations in empty
+[exit 2]
+
+## docker backend, no daemon here
+$ rlsentry attack --backend docker --lab
+rlsentry: could not build or attack the copy: docker backend: no Docker daemon answers: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+[exit 2]
+
+## lab run time, local backend
+2.270223054 s wall clock, exit 1

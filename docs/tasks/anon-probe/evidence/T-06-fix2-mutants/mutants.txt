@@ -1,0 +1,201 @@
+# T-06 fix round 2: every condition on the path that can yield `protected`, as mutants.
+# mutants.py in this directory: each edit on a throwaway copy of a frozen snapshot of the worktree
+# (git-initialised for iso.sh), full suite with -x, 3 at a time. Run 1 is the code and tests at
+# ffa829d plus this round's first two tests (D3, V10); run 2 is the final tests. The product code
+# (rlsentry/) is unchanged from ffa829d in this round.
+#
+# Result: 44 mutants. 20 killed by a test. 24 survive and are equivalent, each for the reason in the
+# table at the end (no input changes what a user sees, or the guard is redundant with another one).
+#
+# Mutants that need this round's tests: S16 (D3), S20 and L12 (V9) and E1 (V10).
+#  - L12 (V9) was killed in fix round 1 by supabase_app and survived run 1 here: the server's log
+#    usually lands before rlsentry reads it, so a test through a real server only loses the race
+#    by chance. test_the_log_is_read_up_to_a_line_of_rlsentrys_own writes the log late on purpose
+#    and fails on the mutant every time (the targeted run below); in run 2 an earlier test happened
+#    to lose the race first, which -x reports.
+
+## Run 1
+M00 none (sanity: the unmutated copy passes)
+     192 passed in 216.61s (0:03:36)
+M01 R1 the oracle's no answer not checked
+     1 failed, 139 passed in 130.36s (0:02:10)
+       tests/test_verdicts.py::test_an_update_rls_refuses_on_its_first_row_and_other_code_on_a_later_one_is_not_protected
+M02 R2 PostgreSQL's no answer not checked
+     SURVIVED: 192 passed in 215.22s (0:03:35)
+M03 R3 the two answers need not agree (fix 1's M02)
+     1 failed, 178 passed in 211.09s (0:03:31)
+       tests/test_verdicts.py::test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected
+M04 R4 only the kind compared, not the table (verdict V8)
+     1 failed, 178 passed in 213.41s (0:03:33)
+       tests/test_verdicts.py::test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected
+M05 S1 any ERROR, not the first (verdict V12: the last)
+     SURVIVED: 192 passed in 226.62s (0:03:46)
+M06 S2 errors read only as ERROR severity: none read
+     1 failed, 13 passed in 6.17s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M07 S3 SQLSTATE 42501 not checked (verdict V11)
+     SURVIVED: 192 passed in 232.44s (0:03:52)
+M08 S4 grant: the C function not checked
+     SURVIVED: 192 passed in 233.69s (0:03:53)
+M09 S5 grant: a nested refusal accepted (verdict V7)
+     SURVIVED: 192 passed in 231.03s (0:03:51)
+M10 S6 grant: the table in the message not checked
+     SURVIVED: 192 passed in 226.79s (0:03:46)
+M11 S7 check: the C function not checked (verdict V2)
+     1 failed, 150 passed in 163.84s (0:02:43)
+       tests/test_verdicts.py::test_d2_a_policy_elsewhere_true_inside_the_trigger_is_never_protected[forged]
+M12 S8 check: the message's start not checked
+     SURVIVED: 192 passed in 236.86s (0:03:56)
+M13 S9 check: the table name's quoting not checked
+     SURVIVED: 192 passed in 241.93s (0:04:01)
+M14 S10 check: top level or nested not checked (verdict V1)
+     1 failed, 145 passed in 158.06s (0:02:38)
+       tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user-nested]
+M15 S11 an error that is not RLS's falls through to the plan
+     SURVIVED: 192 passed in 233.85s (0:03:53)
+M16 S12 an INSERT may be answered by a plan
+     SURVIVED: 192 passed in 231.51s (0:03:51)
+M17 S13 no entries not checked
+     SURVIVED: 192 passed in 228.05s (0:03:48)
+M18 S14 every entry read as a plan
+     1 failed, 13 passed in 6.60s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M19 S15 any plan node, not the write
+     1 failed, 13 passed in 5.81s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M20 S16 any schema's table of that name (verdict V6, D3)
+     1 failed, 154 passed in 171.66s (0:02:51)
+       tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule-other-schema]
+M21 S17 any table's write (fix 1's M06)
+     1 failed, 153 passed in 170.38s (0:02:50)
+       tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule]
+M22 S18 more than one write: the first is read
+     SURVIVED: 192 passed in 226.23s (0:03:46)
+M23 S19 more than one write: the last is read
+     SURVIVED: 192 passed in 224.23s (0:03:44)
+M24 S20 the write's operation not checked
+     SURVIVED: 192 passed in 222.27s (0:03:42)
+M25 S21 every child of the write, not only its source
+     1 failed, 27 passed in 20.89s
+       tests/test_host.py::test_what_built_as_superuser_still_builds[supabase_app]
+M26 S22 more than one source: the first is read
+     SURVIVED: 192 passed in 216.55s (0:03:36)
+M27 S23 the source's loops not checked
+     SURVIVED: 192 passed in 218.09s (0:03:38)
+M28 S24 the source's rows not read (fix 1's M05)
+     1 failed, 152 passed in 159.48s (0:02:39)
+       tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-trigger-skips]
+M29 L1 no request id not checked
+     SURVIVED: 192 passed in 209.41s (0:03:29)
+M30 L2 the naming entry: any user (verdict V5)
+     SURVIVED: 192 passed in 210.65s (0:03:30)
+M31 L3 the naming entry: any C function
+     SURVIVED: 192 passed in 209.64s (0:03:29)
+M32 L4 the naming entry: any statement
+     SURVIVED: 192 passed in 208.30s (0:03:28)
+M33 L5 the naming entry: the request id not matched (verdict V4)
+     1 failed, 13 passed in 5.88s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M34 L6 more than one transaction named: all read
+     SURVIVED: 192 passed in 208.82s (0:03:28)
+M35 L7 the request's entries: any user
+     SURVIVED: 192 passed in 209.01s (0:03:29)
+M36 L8 the request's entries: any transaction (fix 1's M07)
+     1 failed, 13 passed in 6.13s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M37 L9 the request's entries: by session, not transaction (fix 1's M08)
+     1 failed, 30 passed in 23.20s
+       tests/test_host.py::test_what_built_as_superuser_still_builds[ext_unqualified]
+M38 L10 the sync line: any user
+     SURVIVED: 192 passed in 214.70s (0:03:34)
+M39 L11 the sync line: any token
+     SURVIVED: 192 passed in 214.31s (0:03:34)
+M40 L12 the log read without waiting for the sync line (verdict V9)
+     SURVIVED: 192 passed in 213.18s (0:03:33)
+M41 A1 a 42501 is never asked about
+     1 failed, 13 passed in 6.02s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M42 A2 a 2xx that changed nothing is never asked about (fix 1's v6a)
+     1 failed, 13 passed in 6.01s
+       tests/test_guard.py::test_attack_requests_ignore_proxy_environment_variables
+M43 A3 an INSERT's 2xx asked about
+     SURVIVED: 192 passed in 222.57s (0:03:42)
+M44 E1 no target row is not checked (verdict V10)
+     1 failed, 179 passed in 212.70s (0:03:32)
+       tests/test_verdicts.py::test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls
+
+## Run 2 (final tests; M00 is the full suite)
+M00 none (sanity: the unmutated copy passes)
+     197 passed in 225.80s (0:03:45)
+M20 S16 any schema's table of that name (verdict V6, D3)
+     1 failed, 154 passed in 163.35s (0:02:43)
+       tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule-other-schema]
+M24 S20 the write's operation not checked
+     1 failed, 155 passed in 165.17s (0:02:45)
+       tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule-other-op]
+M40 L12 the log read without waiting for the sync line (verdict V9)
+     1 failed, 139 passed in 127.14s (0:02:07)
+       tests/test_verdicts.py::test_an_update_rls_refuses_on_its_first_row_and_other_code_on_a_later_one_is_not_protected
+M44 E1 no target row is not checked (verdict V10)
+     1 failed, 183 passed in 208.31s (0:03:28)
+       tests/test_verdicts.py::test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls
+
+## M40 (L12) against only the new test, on a throwaway copy of the final snapshot
+$ python3 -m pytest -q tests/test_verdicts.py -k read_up_to
+E       AssertionError: assert [] == [{'user': 'au...'ERROR', ...}]
+E         Right contains 2 more items, first extra item: {'user': 'authenticator', 'session_id': 's', 'vxid': '3/7', 'func_name': 'exec_execute_message', ...}
+1 failed, 115 deselected in 0.38s
+
+## Every condition on the path to `protected`
+# killed: the test that fails. equivalent: why no input can tell the mutant apart.
+# Probes cited are in ../T-06-fix2-try/verdict-cases.txt.
+| Mutant | Result | Test, or why equivalent |
+|---|---|---|
+| R1 ours None not checked | killed | test_an_update_rls_refuses_on_its_first_row_and_other_code_on_a_later_one_is_not_protected (crash on None[:2]) |
+| R2 theirs None not checked | equivalent | `ours[:2] != None` is always true for a tuple, so the next condition returns None |
+| R3 answers need not agree | killed | test_a_refusal_rlsentry_reads_differently_from_postgresql_is_never_protected |
+| R4 only the kind compared (V8) | killed | same |
+| S1 last ERROR, not first (V12) | equivalent | the first ERROR aborts PostgREST's transaction, which sends nothing more but ROLLBACK; errors a PL/pgSQL handler catches are not logged; so a request has at most one ERROR |
+| S2 no ERROR read | killed | test_guard (every refused write stops the run) |
+| S3 SQLSTATE not checked (V11) | equivalent | redundant with S7+S8 and S4+S6: ExecWithCheckOptions raises the "row-level security policy" messages only as 42501 (its view-check message is 44000); aclcheck_error's "permission denied for table" is always 42501 |
+| S4 grant: C function not checked | equivalent | ours must be ("grant", table) too, so anon lacks the grant, and PostgreSQL's privilege check refuses the statement before any of the table's code; a forged message (RAISE) always has a context, so `not nested` refuses it as well |
+| S5 grant: nested accepted (V7) | equivalent | same: with anon lacking the grant the refusal is at the top level before any nested code runs |
+| S6 grant: table in message not checked | equivalent | ours must be grant, so anon lacks the table's privilege; PostgreSQL checks the statement's relations (only the target in PostgREST's write) and names the table first, even with schema usage revoked too (probe `schema`: "permission denied for table inbox") |
+| S7 check: C function not checked (V2) | killed | test_d2_a_policy_elsewhere_true_inside_the_trigger_is_never_protected[forged] |
+| S8 check: message start not checked | equivalent | redundant with S3+S7: ExecWithCheckOptions raises 42501 only with the RLS messages |
+| S9 check: quoting not checked | equivalent | every RLS message from ExecWithCheckOptions ends `for table "<name>"` |
+| S10 check: top level / nested (V1) | killed | test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user-nested] |
+| S11 a non-RLS error falls through to the plan | equivalent | auto_explain logs a plan at ExecutorEnd, which an aborted statement never reaches, and PostgREST's write is its only statement with a write; an INSERT returns None at S12 anyway |
+| S12 an INSERT answered by a plan | equivalent | the attacker asks about an INSERT only on a 42501 (A3), whose request has an ERROR, handled above; and ours is never ("using", ...) for an INSERT |
+| S13 no entries not checked | equivalent | no entries means no writes, and `len(writes) != 1` returns None |
+| S14 every entry read as a plan | killed | test_guard (crash reading a non-plan entry) |
+| S15 any plan node | killed | test_guard (the scan node counts as a second write) |
+| S16 any schema (V6, D3) | killed | test_d1_an_update_or_delete...[UPDATE-session_user-rule-other-schema] (new) |
+| S17 any table's write | killed | test_d1_an_update_or_delete...[UPDATE-session_user-rule] |
+| S18 several writes: the first read | equivalent | PostgREST's write sits in a WITH, where PostgreSQL refuses DO ALSO rules (probe `also`); an INSTEAD rule whose action is the same operation on the same table recurses (probe `recur`); so a request has PostgREST's own write alone, or rule writes none of which is the requested operation on public.<table>, which S20 refuses whichever is read |
+| S19 several writes: the last read | equivalent | same |
+| S20 the write's operation not checked | killed | test_d1_an_update_or_delete...[UPDATE-session_user-rule-other-op] (new) |
+| S21 every child of the write | killed | test_host [supabase_app] (an InitPlan child) |
+| S22 several sources: the first read | equivalent | a ModifyTable has exactly one source plan in PostgreSQL 14 and later (inheritance and partitions go through one Append) |
+| S23 the source's loops not checked | equivalent | a ModifyTable runs once per statement (a data-modifying WITH always runs once, to completion) and starts its source, so the source shows loops 1 |
+| S24 the source's rows not read | killed | test_d1_an_update_or_delete...[UPDATE-session_user-trigger-skips] |
+| L1 no request id not checked | equivalent | with None the match looks for the id "None", which no request carries (ids are 128-bit hex) |
+| L2 naming entry: any user (V5) | equivalent | only authenticator's sessions log statements (exec_execute_message), and settings that turn this on are superuser-only |
+| L3 naming entry: any C function | equivalent | an authenticator entry that carries the request id (a RAISE LOG by a policy, say) can only come from that request's own transaction, the only place the id is set as authenticator |
+| L4 naming entry: any statement | equivalent | same: every authenticator statement whose parameters hold the id is in that request's transaction |
+| L5 request id not matched (V4) | killed | test_guard |
+| L6 several transactions: all read | equivalent | the id is fresh per request and PostgREST runs a request in one transaction, once |
+| L7 request's entries: any user | equivalent | session_id names one backend, which is authenticator's session |
+| L8 any transaction | killed | test_guard |
+| L9 by session, not transaction | killed | test_host [ext_unqualified] |
+| L10 sync line: any user | equivalent | the token is random and made after everything the request and the oracle ran; nothing else can log it |
+| L11 sync line: any token | equivalent | only rlsentry's own DO blocks log as supabase_admin with that message, and each earlier one was consumed by its own read |
+| L12 read without waiting (V9) | killed | test_the_log_is_read_up_to_a_line_of_rlsentrys_own (new; deterministic) |
+| A1 a 42501 never asked about | killed | test_guard |
+| A2 a 2xx never asked about | killed | test_guard |
+| A3 an INSERT's 2xx asked about | equivalent | Attacker.insert returns (EXPOSED) or continues on every 2xx before it asks |
+| E1 no target row not checked (V10) | killed | test_a_write_by_primary_key_that_reached_no_row_is_no_answer_from_rls (new) |
+
+## Final code (worktree, after moving the rule-other-op entry into the _STOPS literal; same cases)
+$ iso.sh python3 -m pytest -q
+197 passed in 226.53s (0:03:46)

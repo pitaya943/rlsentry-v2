@@ -1,0 +1,21 @@
+# Fix round 1: each tests/fixtures/value_types table alone, rlsentry at 5f82d22 (isolated by iso.sh)
+bookings: exit 2: rlsentry: could not build or attack the copy: bookings: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 400 22007: invalid input syntax for type date: "30 days")
+posts: exit 2: rlsentry: could not build or attack the copy: posts: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 400 22007: invalid input syntax for type timestamp with time zone: "1 day")
+t_auth: exit 0: protected (11 rows tried)
+t_int: exit 2: rlsentry: could not build or attack the copy: t_int: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 400 22P02: invalid input syntax for type integer: "0.5")
+t_len: exit 2: rlsentry: could not build or attack the copy: t_len: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 400 22001: value too long for type character varying(3))
+t_role: exit 0: protected (13 rows tried)
+t_small: exit 2: rlsentry: could not build or attack the copy: t_small: INSERT got no answer from row-level security, so it is neither exposed nor protected (HTTP 400 22003: value "32768" is out of range for type smallint)
+
+# New tests at 5f82d22 (tests/test_verdicts.py with fixture value_types), isolated
+FAILED tests/test_verdicts.py::test_insert_that_wrote_no_row_is_not_exposed
+FAILED tests/test_verdicts.py::test_seeding_that_kept_no_row_says_why - Asser...
+FAILED tests/test_verdicts.py::test_delete_clears_a_tables_references_to_itself_before_trying_again
+ERROR tests/test_verdicts.py::test_value_search_sends_only_values_the_column_can_hold[posts-None]
+ERROR tests/test_verdicts.py::test_value_search_sends_only_values_the_column_can_hold[bookings-16]
+ERROR tests/test_verdicts.py::test_value_search_sends_only_values_the_column_can_hold[t_int-11]
+ERROR tests/test_verdicts.py::test_value_search_sends_only_values_the_column_can_hold[t_small-13]
+ERROR tests/test_verdicts.py::test_value_search_sends_only_values_the_column_can_hold[t_role-11]
+ERROR tests/test_verdicts.py::test_value_search_sends_only_values_the_column_can_hold[t_len-7]
+ERROR tests/test_verdicts.py::test_value_search_sends_only_values_the_column_can_hold[t_auth-11]
+3 failed, 21 passed, 7 errors in 20.14s

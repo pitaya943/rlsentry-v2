@@ -1,0 +1,10 @@
+$ rlsentry attack --backend local --migrations <dir>   # bounce() returns false, listener answers [{"id":1,"secret":"FABRICATED-NOT-IN-COPY"}]
+rlsentry: could not build or attack the copy: notes: READ was answered with a redirect (HTTP 302), which rlsentry never follows, so it is neither exposed nor protected
+[exit 2]
+listener log: nothing
+
+$ rlsentry attack --backend local --migrations <dir>   # bounce() returns true, listener answers []
+rlsentry: could not build or attack the copy: notes: READ was answered with a redirect (HTTP 302), which rlsentry never follows, so it is neither exposed nor protected
+[exit 2]
+listener log: nothing
+

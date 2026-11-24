@@ -1,0 +1,30 @@
+# Every T-06 test in test_verdicts.py and test_host.py against 83e72a2's rlsentry/ (tests at the T-06 head), on a throwaway copy, isolated by T-03's iso.sh.
+# The definer and writer-role tests (fp2 variants) pass here, exit 2 through the old resend; they are proven by mutants M33-M35.
+# The settings, host, grant and partly-refused-update tests fail here for a missing API or basis text; each is proven by the mutants that break what it pins.
+ 3 files changed, 278 insertions(+), 50 deletions(-)
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[c42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[d42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[a42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[r42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[c42-rls-off]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[c42-generated]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[uc42]
+FAILED tests/test_verdicts.py::test_a_refusal_by_rls_is_protected_whatever_the_tables_triggers_do[fp1]
+FAILED tests/test_verdicts.py::test_a_refusal_by_rls_is_protected_whatever_the_tables_triggers_do[fp2]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[claims]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[exp]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[iss]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[role]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[method]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[path]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[headers]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[cookies]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[search_path]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[public]
+FAILED tests/test_verdicts.py::test_the_oracle_gets_exactly_the_settings_postgrest_makes
+FAILED tests/test_verdicts.py::test_an_update_whose_policy_refuses_some_of_the_new_rows_is_protected
+FAILED tests/test_verdicts.py::test_an_update_refused_by_other_code_on_a_row_the_policy_accepts_is_not_protected
+FAILED tests/test_verdicts.py::test_a_write_refused_for_want_of_a_grant_is_protected
+FAILED tests/test_host.py::test_inspector_runs_migration_code_only_as_postgres
+FAILED tests/test_host.py::test_a_migration_function_that_never_returns_cannot_hang_the_run[rls_refusal]
+25 failed, 69 passed, 1 warning in 77.89s (0:01:17)

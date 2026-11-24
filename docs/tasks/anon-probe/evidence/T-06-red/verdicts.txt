@@ -1,0 +1,35 @@
+# T-06 reproductions run at 83e72a2 (tests added, code unchanged), isolated by T-03's iso.sh
+E       assert 0 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 2 == 0
+E       assert 2 == 0
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[c42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[d42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[a42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[r42]
+FAILED tests/test_verdicts.py::test_a_refusal_from_code_that_runs_after_the_policies_is_never_protected[uc42]
+FAILED tests/test_verdicts.py::test_a_refusal_by_rls_is_protected_whatever_the_tables_triggers_do[fp1]
+FAILED tests/test_verdicts.py::test_a_refusal_by_rls_is_protected_whatever_the_tables_triggers_do[fp2]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[claims]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[exp]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[iss]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[role]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[method]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[path]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[headers]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[cookies]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[search_path]
+FAILED tests/test_verdicts.py::test_the_policies_are_evaluated_as_postgrest_runs_them[public]
+17 failed, 12 passed, 36 deselected in 23.61s

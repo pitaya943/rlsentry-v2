@@ -1,0 +1,45 @@
+# Can migration code read, or turn off, the server's log? Each probe on both backends (docker: tests/fakedocker.py).
+# ALTER SYSTEM would need a superuser too, and the log settings are on the server's command line, which ALTER SYSTEM does not override (seen while writing test_without_the_servers_log_no_write_is_protected: a superuser's ALTER SYSTEM + reload + rotate left the jsonlog in place).
+# Driver: bash log-probes.sh (this directory), from the checkout root, under T-03's iso.sh, rlsentry from a fresh venv (pip install -e .).
+
+$ rlsentry attack --backend local --migrations <read-log>
+  (select pg_read_binary_file(pg_current_logfile('jsonlog'));)
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 1: permission denied for function pg_read_binary_file
+[exit 2]
+
+$ rlsentry attack --backend docker --migrations <read-log>
+  (select pg_read_binary_file(pg_current_logfile('jsonlog'));)
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 1: permission denied for function pg_read_binary_file
+[exit 2]
+
+$ rlsentry attack --backend local --migrations <read-log-by-name>
+  (select pg_read_binary_file('log/' || f) from pg_ls_logdir() f;)
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 1: permission denied for function pg_ls_logdir
+[exit 2]
+
+$ rlsentry attack --backend docker --migrations <read-log-by-name>
+  (select pg_read_binary_file('log/' || f) from pg_ls_logdir() f;)
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 1: permission denied for function pg_ls_logdir
+[exit 2]
+
+$ rlsentry attack --backend local --migrations <turn-off-log>
+  (alter system set log_destination = 'stderr';)
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 1: ALTER SYSTEM cannot run inside a transaction block
+[exit 2]
+
+$ rlsentry attack --backend docker --migrations <turn-off-log>
+  (alter system set log_destination = 'stderr';)
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 1: ALTER SYSTEM cannot run inside a transaction block
+[exit 2]
+
+$ rlsentry attack --backend local --migrations <grant-reader>
+  (grant pg_read_server_files to postgres;)
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 1: permission denied to grant role "pg_read_server_files"
+[exit 2]
+
+$ rlsentry attack --backend docker --migrations <grant-reader>
+  (grant pg_read_server_files to postgres;)
+rlsentry: could not build or attack the copy: migration 001.sql failed at line 1: permission denied to grant role "pg_read_server_files"
+[exit 2]
+
+residue: 

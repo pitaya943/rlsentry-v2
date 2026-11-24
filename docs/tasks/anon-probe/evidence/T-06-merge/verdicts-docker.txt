@@ -1,0 +1,5 @@
+# T-06's verdict tests on the docker backend (tests/fakedocker.py) under iso.sh: the tree committed as 68f1142, before conftest removed its session fake-docker dir
+$ iso.sh python3 -m pytest -q -p no:cacheprovider --rlsentry-backend docker tests/test_verdicts.py
+.................................................                        [100%]
+121 passed in 255.50s (0:04:15)
+exit 0

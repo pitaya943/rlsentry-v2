@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rlsentry RunReport",
+  "type": "object",
+  "required": ["source", "started_at", "rlsentry_version", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "source": {"type": "string"},
+    "started_at": {"type": "string"},
+    "rlsentry_version": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["schema", "table", "results", "notes"],
+        "additionalProperties": false,
+        "properties": {
+          "schema": {"type": "string"},
+          "table": {"type": "string"},
+          "notes": {"type": "array", "items": {"type": "string"}},
+          "results": {
+            "type": "object",
+            "propertyNames": {"enum": ["READ", "INSERT", "UPDATE", "DELETE"]},
+            "additionalProperties": {
+              "type": "object",
+              "required": ["op", "outcome", "basis", "evidence", "tries"],
+              "additionalProperties": false,
+              "properties": {
+                "op": {"enum": ["READ", "INSERT", "UPDATE", "DELETE"]},
+                "outcome": {"enum": ["EXPOSED", "protected"]},
+                "basis": {"type": "string"},
+                "evidence": {"type": ["object", "null"]},
+                "tries": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

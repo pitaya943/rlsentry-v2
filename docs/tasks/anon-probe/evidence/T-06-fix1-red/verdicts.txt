@@ -1,0 +1,32 @@
+# at c3cb785 (rlsentry/ unchanged), only the new tests added
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 0 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+E       assert 1 == 2
+FAILED tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[session_user]
+FAILED tests/test_verdicts.py::test_d1_an_insert_policy_true_only_under_postgrest_is_never_protected[current_query]
+FAILED tests/test_verdicts.py::test_d2_a_policy_elsewhere_true_inside_the_trigger_is_never_protected
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-trigger-42501]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-trigger-skips]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-session_user-rule]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-trigger-42501]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-trigger-skips]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[UPDATE-current_query-rule]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-trigger-42501]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-trigger-skips]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-session_user-rule]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-trigger-42501]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-trigger-skips]
+FAILED tests/test_verdicts.py::test_d1_an_update_or_delete_policy_true_only_under_postgrest_is_never_protected[DELETE-current_query-rule]
+15 failed, 73 deselected in 16.06s
