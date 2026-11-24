@@ -10,3 +10,4 @@ time	who	decision	why	evidence
 2026-11-24T23:39Z	owner	Close #11 once S-4..S-6 pass; list what stays unproven in the closing comment	Owner chose D6 as recommended	brief S-9
 2026-11-24T23:39Z	owner	Pitfalls 1 and 2 (count>=2) go to tasks of their own, not this one; pitfall 6 marked Correct: none possible at count 2	Owner chose D7 as recommended: 1 touches verdict code (critical), 2 needs a standing mutant runner; 6 happens outside the repo	.shilaycow/pitfalls.md
 2026-11-24T23:41Z	owner	brief-approved aea2c48	Owner approved the brief as it stands	chat 2026-11-24
+2026-11-24T23:41Z	autopilot	autopilot-start aea2c48	Gate passed; identity bullet-bots; tracking issue #16	https://github.com/pitaya943/rlsentry-v2/issues/16
