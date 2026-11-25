@@ -1,0 +1,8 @@
+$ rlsentry attack --backend docker --lab   (at b007019, Wed Nov 25 00:44:15 UTC 2026)
+  DELETE: protected - no row changed, confirmed as superuser (DELETE by primary key: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_value_policy); DELETE without a filter: HTTP 204, row-level security lets it reach no row (anon has no DELETE policy on lab_value_policy))
+  note: seeded 5 rows
+
+9 exposed operation(s) in 8 table(s).
+exit 1
+$ docker ps -a --filter label=rlsentry.run -q | wc -l
+0
