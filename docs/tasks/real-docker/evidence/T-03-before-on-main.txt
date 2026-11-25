@@ -1,0 +1,9 @@
+Before this task: main at 62b74a9 under the old `--rlsentry-backend docker` (= the stand-in), 2026-11-24.
+$ python3 -m pytest -q --rlsentry-backend docker -rf
+=========================== short test summary info ============================
+FAILED tests/test_docker.py::test_lab_on_a_real_docker_daemon_matches_expected_and_leaves_nothing
+FAILED tests/test_guard.py::test_both_sandbox_servers_listen_on_loopback_only
+FAILED tests/test_teardown.py::test_signal_mid_run_leaves_nothing[2] - Assert...
+FAILED tests/test_teardown.py::test_signal_mid_run_leaves_nothing[15] - Asser...
+FAILED tests/test_teardown.py::test_next_run_sweeps_a_killed_run - AssertionE...
+5 failed, 247 passed in 785.10s (0:13:05)

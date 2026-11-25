@@ -521,3 +521,18 @@ def test_a_killed_run_on_a_real_daemon_is_swept_by_the_next(state_dir):
     assert code == 0, err
     assert _real_labelled() == []
     assert set(_real("volume", "ls", "-q").split()) == volumes
+
+
+def test_the_stand_in_never_shows_its_state_half_written(fake_docker):
+    """The stand-in rewrites its state on every command while tests (and its own attached `run`)
+    read it without its lock; a reader must never see a partly written file (a whole-suite run
+    on the stand-in once failed with JSONDecodeError here, docs/tasks/real-docker/evidence)."""
+    fake_docker.docker("run", "-d", "--name", "busy", "busybox")
+    writers = [subprocess.Popen(["docker", "ps", "-a", "-q"], stdout=subprocess.DEVNULL)
+               for _ in range(40)]
+    try:
+        while any(w.poll() is None for w in writers):
+            fake_docker.containers()  # raises ValueError on a half-written file
+    finally:
+        for w in writers:
+            w.wait()
