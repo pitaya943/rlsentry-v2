@@ -61,12 +61,17 @@ def pytest_configure(config):
         os.environ.pop("FAKE_DOCKER_FAIL", None)
 
 
-def pytest_report_header(config):
-    if BACKEND != "docker":
-        return None
+def real_docker_report():
+    """What tests/realdocker.py did with the daemon and the images (or why it could not)."""
     if REAL_DOCKER_ERROR:
         return [f"real Docker: NOT READY: {REAL_DOCKER_ERROR}"]
     return [f"real Docker: {line}" for line in REAL_DOCKER_LINES]
+
+
+def pytest_report_header(config):
+    # Shown at the top without -q; the same lines close the run under every verbosity
+    # (pytest_terminal_summary), since the documented command uses -q, which hides headers.
+    return real_docker_report() if BACKEND == "docker" else None
 
 
 def pytest_collection_modifyitems(config, items):
@@ -162,6 +167,8 @@ def copy_of(folder):
 
 def pytest_terminal_summary(terminalreporter):
     if BACKEND == "docker":
+        for line in real_docker_report():
+            terminalreporter.write_line(line)
         terminalreporter.write_line(
             f"real Docker: {len(COPIES_SEEN)} copies built without a named backend, each seen "
             f"created on the real daemon ({len(set(COPIES_SEEN))} distinct run ids)")
