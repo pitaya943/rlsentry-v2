@@ -48,10 +48,17 @@ Every step below was run for this report on 2026-11-24/25, in this cloud environ
    - The second run says `using the Docker daemon already running`.
    - Record: [T-01-start-and-mirror.txt](../evidence/T-01-start-and-mirror.txt). In that run,
      Docker Hub refused PostgREST with 429, and it came from `mirror.gcr.io`.
-3. `python3 -m pytest -q --rlsentry-backend docker` gives about 268 passed in about 10 minutes,
-   with the line `real Docker: N copies built without a named backend, each seen created on
-   the real daemon`. Record: [T-03-whole-suite-docker.txt](../evidence/T-03-whole-suite-docker.txt).
-   - That run started from no daemon after a container restart, and the helper started it.
+3. `python3 -m pytest -q --rlsentry-backend docker` gives about 269 passed in about 10 minutes.
+   The run closes with:
+   - `real Docker: started dockerd (29.9.3), log: /tmp/rlsentry-dockerd.log`, or on a later run
+     `using the Docker daemon already running`;
+   - one line per image naming where it came from;
+   - `real Docker: N copies built without a named backend, each seen created on the real daemon`.
+
+   Record, from no daemon and then again:
+   [fix-1-documented-command.txt](../evidence/fix-1-documented-command.txt). Before fix round 1
+   the daemon and image lines were missing under `-q`
+   ([T-03-whole-suite-docker.txt](../evidence/T-03-whole-suite-docker.txt)).
 4. `docker ps -a --filter label=rlsentry.run` shows nothing.
 5. `python3 -m pytest -q --rlsentry-backend fakedocker` gives 263 passed, 5 skipped. The skips
    are the real-daemon tests, and their reason names the command in step 3.
@@ -125,13 +132,21 @@ From [trail.tsv](../trail.tsv):
 
 The independent verdict is posted as a comment on this pull request.
 
+**Fix round 1.** Verdict 1
+([FAIL](https://github.com/pitaya943/rlsentry-v2/pull/20#issuecomment-7149315062)) found that
+the documented command did not print what S-1 and S-3 say it prints.
+- **Cause:** the command uses `-q`, and the lines were report-header lines, which `-q` hides. No
+  test looked at the command's output.
+- **Fix:** the lines now also close the run, and a new test runs the documented command and
+  checks its output.
+
 ## Scenarios
 
 | Scenario | Met | Evidence |
 |---|---|---|
-| S-1 daemon brought up when none answers, reused after | yes | [T-01-start-and-mirror.txt](../evidence/T-01-start-and-mirror.txt), `test_starts_dockerd_when_no_daemon_answers_and_reuses_it_after`, [T-03-whole-suite-docker.txt](../evidence/T-03-whole-suite-docker.txt) ("no dockerd before"), [#17 Ready](https://github.com/pitaya943/rlsentry-v2/pull/17#issuecomment-7147792406) |
+| S-1 daemon brought up when none answers, reused after | yes (after fix round 1) | [fix-1-documented-command.txt](../evidence/fix-1-documented-command.txt), `test_the_documented_command_says_what_it_did_with_the_daemon_and_images`, [T-01-start-and-mirror.txt](../evidence/T-01-start-and-mirror.txt), `test_starts_dockerd_when_no_daemon_answers_and_reuses_it_after`, [T-03-whole-suite-docker.txt](../evidence/T-03-whole-suite-docker.txt) ("no dockerd before"), [#17 Ready](https://github.com/pitaya943/rlsentry-v2/pull/17#issuecomment-7147792406) |
 | S-2 missing daemon fails, not skips | yes | `test_with_the_docker_option_a_daemon_that_cannot_answer_fails_the_real_tests`, mutant M3 ([T-01-mutants.txt](../evidence/T-01-mutants.txt)) |
-| S-3 mirror fallback | yes | stub tests (gcr, ECR, all refuse); real-daemon test; [try-it-mirror-fallback.txt](../evidence/try-it-mirror-fallback.txt); a real Hub 429 in [T-01-start-and-mirror.txt](../evidence/T-01-start-and-mirror.txt) |
+| S-3 mirror fallback | yes (after fix round 1) | `test_the_documented_command_says_what_it_did_with_the_daemon_and_images` (registry per image under `-q`), stub tests (gcr, ECR, all refuse); real-daemon test; [try-it-mirror-fallback.txt](../evidence/try-it-mirror-fallback.txt); a real Hub 429 in [T-01-start-and-mirror.txt](../evidence/T-01-start-and-mirror.txt) |
 | S-4 lab on the real daemon, no volume, nothing left | yes | `test_lab_on_a_real_docker_daemon...`, [T-01-real-option.txt](../evidence/T-01-real-option.txt), [try-it-lab-on-real-docker.txt](../evidence/try-it-lab-on-real-docker.txt) |
 | S-5 verdict and answer suites on the real daemon | yes | [T-02-suites-on-real-docker.txt](../evidence/T-02-suites-on-real-docker.txt) (137 passed, 156 copies witnessed), mutants W1 and W2 ([T-02-mutants.txt](../evidence/T-02-mutants.txt)) |
 | S-6 Ctrl-C and kill -9 on the real daemon leave nothing | yes | `test_sigint_mid_run_on_a_real_daemon...`, `test_a_killed_run_on_a_real_daemon...`, mutants W3 and W4 |
