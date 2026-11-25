@@ -276,7 +276,11 @@ def locked(cmd, args):
         try:
             out = dispatch(state, cmd, args)
         finally:
-            (D / "state.json").write_text(json.dumps(state, indent=1))
+            # Readers (the tests, and an attached `run` below) take no lock: write a new file
+            # and rename it over the old one, so a reader sees either state, never half of one.
+            tmp = D / f"state.json.{os.getpid()}"
+            tmp.write_text(json.dumps(state, indent=1))
+            os.replace(tmp, D / "state.json")
     for name in ATTACHED:
         while True:
             c = load()["containers"].get(name)

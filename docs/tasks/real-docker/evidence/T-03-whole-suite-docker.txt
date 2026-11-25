@@ -1,0 +1,8 @@
+$ python3 -m pytest -q -p no:cacheprovider --rlsentry-backend docker -rfEs   (at 0d9fcea)
+Wed Nov 25 00:32:51 UTC 2026
+(no dockerd before)
+real Docker: 201 copies built without a named backend, each seen created on the real daemon (201 distinct run ids)
+268 passed in 627.30s (0:10:27)
+Wed Nov 25 00:43:21 UTC 2026
+$ docker ps -a --filter label=rlsentry.run -q | wc -l
+0

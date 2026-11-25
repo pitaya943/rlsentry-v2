@@ -1,0 +1,14 @@
+$ python3 -m pytest -q -p no:cacheprovider --rlsentry-backend local -rfEs   (at 0d9fcea)
+Wed Nov 25 00:26:36 UTC 2026
+(no dockerd before)
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_docker.py:447: needs a real Docker daemon: run `python3 -m pytest -q --rlsentry-backend docker`
+SKIPPED [1] tests/test_docker.py:487: needs a real Docker daemon: run `python3 -m pytest -q --rlsentry-backend docker`
+SKIPPED [1] tests/test_docker.py:506: needs a real Docker daemon: run `python3 -m pytest -q --rlsentry-backend docker`
+SKIPPED [1] tests/test_realdocker.py:202: needs a real Docker daemon: run `python3 -m pytest -q --rlsentry-backend docker`
+SKIPPED [1] tests/test_realdocker.py:217: needs a real Docker daemon: run `python3 -m pytest -q --rlsentry-backend docker`
+263 passed, 5 skipped in 374.72s (0:06:14)
+Wed Nov 25 00:32:51 UTC 2026
+$ docker ps -a --filter label=rlsentry.run -q | wc -l
+1
+(the 1 above is the docker CLI's "cannot connect" line: no daemon was running during this option's run, as S-8 expects; 0 containers)

@@ -26,6 +26,10 @@ no area lists a Not yet built section.
    migrations.
 6. **more-surfaces** — storage buckets and RPC functions callable by anon.
 
+Outside the chain: **real-docker** (a chore after anon-probe) made the Docker backend's
+check on a real daemon a repeatable test command (issue #11). It changes no task's order;
+`ci-gate` and a CI workflow for this repository can call that command.
+
 Order after anon-probe: kept. Nothing in anon-probe showed a later task needs
 another first. Two things it found bear on the next tasks without re-ordering
 them:

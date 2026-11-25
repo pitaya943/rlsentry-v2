@@ -1,8 +1,9 @@
 """D-1 (a) and S-8 on the docker backend.
 
-There is no Docker daemon where these tests were written, so most of them run against
-tests/fakedocker.py: the docker CLI and daemon played by local PostgreSQL and PostgREST
-processes. The last test runs against a real daemon when one answers.
+Most of them run against tests/fakedocker.py: the docker CLI and daemon played by local
+PostgreSQL and PostgREST processes, so that failures a real daemon cannot be made to show
+(a slow `docker run`, a flaky `rm`, a daemon that dies) can be tested. The tests marked
+`real_docker`, at the end, run on a real daemon, and only with `--rlsentry-backend docker`.
 """
 
 import json
@@ -440,17 +441,10 @@ def test_without_the_servers_log_nothing_is_protected(fake_docker, tmp_path, mon
                 getattr(attacker, op.lower())("inbox")
 
 
-# The real thing, where a Docker daemon answers (not in the environment this was built in).
+# The real thing: only with `pytest --rlsentry-backend docker`, which makes a real daemon and
+# both images ready (tests/realdocker.py) and fails these tests if it cannot.
 
-def _real_daemon():
-    try:
-        return subprocess.run(["docker", "version", "--format", "{{.Server.Version}}"],
-                              capture_output=True, timeout=30).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
-@pytest.mark.skipif(not _real_daemon(), reason="no Docker daemon answers here")
+@pytest.mark.real_docker
 def test_lab_on_a_real_docker_daemon_matches_expected_and_leaves_nothing(tmp_path, monkeypatch):
     from rlsentry.attack import LAB, attack
 
@@ -468,3 +462,77 @@ def test_lab_on_a_real_docker_daemon_matches_expected_and_leaves_nothing(tmp_pat
     left = subprocess.run(["docker", "ps", "-a", "-q", "--filter", f"label=rlsentry.run={run_id}"],
                           capture_output=True, text=True, check=True).stdout.split()
     assert left == []
+
+
+def _real(*args):
+    return subprocess.run(["docker", *args], capture_output=True, text=True, check=True).stdout
+
+
+def _real_labelled(running_only=False):
+    """Names of the containers on the real daemon that any rlsentry run labelled."""
+    return _real("ps", *([] if running_only else ["-a"]), "--filter", "label=rlsentry.run",
+                 "--format", "{{.Names}}").split()
+
+
+def _wait_for_real_containers(count, timeout=120):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        running = _real_labelled(running_only=True)
+        if len(running) >= count:
+            return running
+        time.sleep(0.2)
+    raise AssertionError("the containers never came up on the real daemon")
+
+
+@pytest.mark.real_docker
+def test_sigint_mid_run_on_a_real_daemon_leaves_nothing(state_dir):
+    """S-6: the owner's Ctrl-C check of 2026-11-24 (#11), repeatable."""
+    assert _real_labelled() == []
+    volumes = set(_real("volume", "ls", "-q").split())
+    proc = rlsentry("attack", "--backend", "docker", "--migrations", str(FIXTURES / "slow"),
+                    state_dir=state_dir)
+    _wait_for_real_containers(2)
+    time.sleep(1)  # into the attack: the anon read is now waiting on pg_sleep
+
+    proc.send_signal(signal.SIGINT)
+    _, err = proc.communicate(timeout=60)
+
+    assert proc.returncode == 2, err
+    assert "interrupted (SIGINT); the copy was torn down" in err
+    assert _real_labelled() == []
+    assert set(_real("volume", "ls", "-q").split()) == volumes
+
+
+@pytest.mark.real_docker
+def test_a_killed_run_on_a_real_daemon_is_swept_by_the_next(state_dir):
+    """S-6: the owner's kill -9 check of 2026-11-24 (#11), repeatable."""
+    assert _real_labelled() == []
+    volumes = set(_real("volume", "ls", "-q").split())
+    killed = rlsentry("attack", "--backend", "docker", "--migrations", str(FIXTURES / "slow"),
+                      state_dir=state_dir)
+    left = _wait_for_real_containers(2)
+    killed.kill()  # SIGKILL: no teardown can run
+    killed.communicate(timeout=10)
+    assert set(left) <= set(_real_labelled())  # the killed run really left its copy behind
+
+    code, _, err = run_rlsentry("attack", "--backend", "docker", "--migrations",
+                                str(FIXTURES / "clean"), state_dir=state_dir)
+
+    assert code == 0, err
+    assert _real_labelled() == []
+    assert set(_real("volume", "ls", "-q").split()) == volumes
+
+
+def test_the_stand_in_never_shows_its_state_half_written(fake_docker):
+    """The stand-in rewrites its state on every command while tests (and its own attached `run`)
+    read it without its lock; a reader must never see a partly written file (a whole-suite run
+    on the stand-in once failed with JSONDecodeError here, docs/tasks/real-docker/evidence)."""
+    fake_docker.docker("run", "-d", "--name", "busy", "busybox")
+    writers = [subprocess.Popen(["docker", "ps", "-a", "-q"], stdout=subprocess.DEVNULL)
+               for _ in range(40)]
+    try:
+        while any(w.poll() is None for w in writers):
+            fake_docker.containers()  # raises ValueError on a half-written file
+    finally:
+        for w in writers:
+            w.wait()

@@ -1,0 +1,19 @@
+$ pgrep -x dockerd   (Wed Nov 25 01:13:44 UTC 2026)
+(no dockerd)
+$ python3 -m pytest -q --rlsentry-backend docker   # run 1, whole suite
+real Docker: started dockerd (29.9.3), log: /tmp/rlsentry-dockerd.log
+real Docker: postgres:16: already present (sha256:07abc3f43c93)
+real Docker: postgrest/postgrest:v12.2.3: already present (sha256:729bf65c733b)
+real Docker: 201 copies built without a named backend, each seen created on the real daemon (201 distinct run ids)
+269 passed in 595.00s (0:09:55)
+$ python3 -m pytest -q --rlsentry-backend docker tests/test_realdocker.py   # run 2
+..............                                                           [100%]
+real Docker: using the Docker daemon already running (29.9.3)
+real Docker: postgres:16: already present (sha256:07abc3f43c93)
+real Docker: postgrest/postgrest:v12.2.3: already present (sha256:729bf65c733b)
+real Docker: 0 copies built without a named backend, each seen created on the real daemon (0 distinct run ids)
+14 passed in 5.36s
+$ pgrep -cx dockerd
+1
+$ docker ps -a --filter label=rlsentry.run -q | wc -l
+0

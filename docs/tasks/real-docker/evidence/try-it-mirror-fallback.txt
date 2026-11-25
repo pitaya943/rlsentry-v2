@@ -1,0 +1,12 @@
+$ docker tag postgres:16 rlsentry-test-spare/postgres:16 && docker rmi postgres:16
+ok
+$ RLSENTRY_TEST_REFUSE_REGISTRY=docker.io python3 tests/realdocker.py
+using the Docker daemon already running (29.9.3)
+postgres:16: pulled from mirror.gcr.io (sha256:07abc3f43c93)
+postgrest/postgrest:v12.2.3: already present (sha256:729bf65c733b)
+exit 0
+$ RLSENTRY_TEST_REFUSE_REGISTRY=docker.io,mirror.gcr.io python3 tests/realdocker.py   (after dropping the tag again)
+using the Docker daemon already running (29.9.3)
+postgres:16: pulled from public.ecr.aws (sha256:07abc3f43c93)
+postgrest/postgrest:v12.2.3: already present (sha256:729bf65c733b)
+exit 0
