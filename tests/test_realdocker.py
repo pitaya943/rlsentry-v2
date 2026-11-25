@@ -197,6 +197,31 @@ def test_with_the_docker_option_a_daemon_that_cannot_answer_fails_the_real_tests
     assert [c for c in _calls(stub) if c[0] == "dockerd"] == []
 
 
+@pytest.mark.skipif(os.geteuid() != 0, reason="the command starts dockerd only as root")
+def test_the_documented_command_says_what_it_did_with_the_daemon_and_images(stub):
+    """S-1 and S-3 as the user sees them: `pytest -q --rlsentry-backend docker` (the command
+    the brief and spec name, with -q, which hides report headers) prints that it started
+    dockerd and where its log is, then on the next run that it reused it, and which registry
+    each image came from. Docker Hub refuses (the stub's 429), so both come from mirror.gcr.io.
+    A cheap stub-only test is selected, so nothing here needs the real daemon."""
+    env = dict(os.environ)
+    select = ["-q", "--rlsentry-backend", "docker", str(TESTS / "test_realdocker.py"),
+              "-k", "test_names_every_registry_when_all_refuse"]
+
+    first, second = (subprocess.run([sys.executable, "-m", "pytest", "-p", "no:cacheprovider",
+                                     *select], capture_output=True, text=True, timeout=300,
+                                    env=env, cwd=TESTS.parent) for _ in range(2))
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert "real Docker: started dockerd (99.0-stub), log: " in first.stdout
+    assert f"real Docker: {DB_IMAGE}: pulled from mirror.gcr.io" in first.stdout
+    assert f"real Docker: {REST_IMAGE}: pulled from mirror.gcr.io" in first.stdout
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert "real Docker: using the Docker daemon already running (99.0-stub)" in second.stdout
+    assert f"real Docker: {DB_IMAGE}: already present" in second.stdout
+    assert [c for c in _calls(stub) if c[0] == "dockerd"] == [["dockerd"]]
+
+
 # On the real daemon.
 
 @pytest.mark.real_docker

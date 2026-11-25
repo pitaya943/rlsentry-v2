@@ -113,7 +113,7 @@ def _image_id(ref):
     return got.stdout.strip() if got.returncode == 0 else None
 
 
-def ensure_image(image, say=print):
+def ensure_image(image):
     """Make `image` present under its pinned name; return a line saying where it came from."""
     present = _image_id(image)
     if present:
@@ -137,7 +137,7 @@ def ensure(say=print):
     """Daemon, then both images. Return the lines describing what was done."""
     lines = [ensure_daemon(say)]
     for image in (DB_IMAGE, REST_IMAGE):
-        lines.append(ensure_image(image, say))
+        lines.append(ensure_image(image))
     return lines
 
 
